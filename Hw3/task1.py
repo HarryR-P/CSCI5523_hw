@@ -2,9 +2,12 @@ import argparse
 import json
 import time
 import pyspark
+import findspark
 
 
 def main(input_file, output_file, jac_thr, n_bands, n_rows, sc):
+
+    findspark.init()
 
     sc_conf = pyspark.SparkConf() \
         .setAppName('task1') \
@@ -14,6 +17,12 @@ def main(input_file, output_file, jac_thr, n_bands, n_rows, sc):
     
     sc = pyspark.SparkContext(conf=sc_conf)
     sc.setLogLevel('OFF')
+
+    review_rdd = sc.textFile(input_file).map(lambda x: json.loads(x))
+    review_matrix_rdd = review_rdd.map(lambda x: (x['business_id'],x['user_id'])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)\
+        .map(lambda x: (x[0],sorted([*set(x[1])])))
+    user_list = review_rdd.map(lambda x: x['user_id']).distinct().sortBy(lambda x: x).collect()
+
     
     
 
