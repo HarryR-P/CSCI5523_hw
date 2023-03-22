@@ -3,7 +3,6 @@ import json
 import time
 import pyspark
 import findspark
-import utils
 
 
 def main(input_file, output_file, jac_thr, n_bands, n_rows, sc):
@@ -20,22 +19,23 @@ def minhash_map(line, user_list):
     business_id = line[0]
     ratings_list = set(line[1])
     bins = len(user_list)
-    nxt_prime = utils.nextPrime(len(user_list))
-    hash_function = lambda x, a: ((a*hash(x) + 10) % nxt_prime) % bins
+    hash_function = lambda x, a: (a*hash(x) + 25) % bins
     bit_list = []
     for user_id in user_list:
         if user_id in ratings_list:
             bit_list.append(1)
         else:
             bit_list.append(0)
+    signature_buckets = 25
+    min_sig = [0 for _ in range(signature_buckets)]
+    for a in range(signature_buckets):
+        for i  in range(len(user_list)):
+            perm_index = hash_function(i, a)
+            if bit_list[perm_index]:
+                min_sig[a] = perm_index
+                break
     
-    for a in range(50):
-        permute = list(range(len(user_list)))
-    
-    return (business_id, bit_list)
-
-
-
+    return (business_id, min_sig)
 
 
 if __name__ == '__main__':
