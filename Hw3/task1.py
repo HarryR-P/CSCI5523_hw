@@ -5,35 +5,33 @@ import pyspark
 import findspark
 
 
-def main(input_file, output_file, jac_thr, n_bands, n_rows, sc):
+def main(input_file, output_file, jac_thr, n_bands, n_rows, sc : pyspark.SparkContext):
 
     review_rdd = sc.textFile(input_file).map(lambda x: json.loads(x))
     review_matrix_rdd = review_rdd.map(lambda x: (x['business_id'],x['user_id'])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)\
         .map(lambda x: (x[0],sorted([*set(x[1])])))
     user_list = review_rdd.map(lambda x: x['user_id']).distinct().sortBy(lambda x: x).collect()
     minhash_rdd = review_matrix_rdd.map(lambda x: minhash_map(x, user_list))
-    print(minhash_rdd.take(5))
-
+    
 
 def minhash_map(line, user_list):
     business_id = line[0]
-    ratings_list = set(line[1])
+    ratings_set = set(line[1])
     bins = len(user_list)
-    hash_function = lambda x, a: (a*hash(x) + 25) % bins
+    hash_function = lambda x,a: (a*x + 25) % bins
     bit_list = []
     for user_id in user_list:
-        if user_id in ratings_list:
+        if user_id in ratings_set:
             bit_list.append(1)
         else:
             bit_list.append(0)
-    signature_buckets = 25
-    min_sig = [0 for _ in range(signature_buckets)]
+    signature_buckets = 30
+    min_sig = [float('inf') for _ in range(signature_buckets)]
     for a in range(signature_buckets):
-        for i  in range(len(user_list)):
-            perm_index = hash_function(i, a)
-            if bit_list[perm_index]:
-                min_sig[a] = perm_index
-                break
+        for position  in range(len(user_list)):
+            index = hash_function(position, a)
+            if bit_list[position] == 1 and min_sig[a] > index:
+                min_sig[a] = index
     
     return (business_id, min_sig)
 
