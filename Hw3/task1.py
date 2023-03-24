@@ -3,6 +3,7 @@ import json
 import time
 import pyspark
 import findspark
+from itertools import combinations
 
 
 def main(input_file, output_file, jac_thr, n_bands, n_rows, sc : pyspark.SparkContext):
@@ -11,7 +12,11 @@ def main(input_file, output_file, jac_thr, n_bands, n_rows, sc : pyspark.SparkCo
     review_matrix_rdd = review_rdd.map(lambda x: (x['business_id'],x['user_id'])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)\
         .map(lambda x: (x[0],sorted([*set(x[1])])))
     user_list = review_rdd.map(lambda x: x['user_id']).distinct().sortBy(lambda x: x).collect()
-    minhash_rdd = review_matrix_rdd.map(lambda x: minhash_map(x, user_list))
+    sig_rdd = review_matrix_rdd.map(lambda x: minhash_map(x, user_list))
+    sig_dict = sig_rdd.collectAsMap()
+    bin_rdd = sig_rdd.flatMap(lambda x: seperate_bands(x, band_num=n_bands, band_bins=n_rows)).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)
+    canadatePairs_rdd = bin_rdd.flatMap(lambda x: count_bins(x)).distinct()
+
     
 
 def minhash_map(line, user_list):
@@ -20,11 +25,13 @@ def minhash_map(line, user_list):
     bins = len(user_list)
     hash_function = lambda x,a: (a*x + 25) % bins
     bit_list = []
+    # minhash
     for user_id in user_list:
         if user_id in ratings_set:
             bit_list.append(1)
         else:
             bit_list.append(0)
+    # signature
     signature_buckets = 30
     min_sig = [float('inf') for _ in range(signature_buckets)]
     for a in range(signature_buckets):
@@ -32,8 +39,37 @@ def minhash_map(line, user_list):
             index = hash_function(position, a)
             if bit_list[position] == 1 and min_sig[a] > index:
                 min_sig[a] = index
-    
     return (business_id, min_sig)
+
+
+def seperate_bands(line, band_num, band_bins):
+    business_id = line[0]
+    sig = line[1]
+    row_size = int(len(sig) / band_num)
+    band_list = [sig[i:i+row_size] for i in range(0, len(sig), row_size)]
+    # hash-to-bins
+    hash_func = lambda band: (5*sum(band) + 10) % band_bins
+    bin_list = [hash_func(band) for band in band_list]
+    return [(bin, business_id) for bin in bin_list]
+
+
+def count_bins(line):
+    business_id = set(line[1])
+    bin = line[0]
+    if len(business_id) < 2: return []
+    pairs = combinations(business_id, 2)
+    return [tuple(sorted(pair)) for pair in pairs]
+
+
+def jac_calc(line, sig_dict, jacobian_thr):
+    id_1 = line[0]
+    id_2 = line[1]
+    sig_1 = sig_dict[id_1]
+    sig_2 = sig_dict[id_2]
+
+
+def jacobian(s1, s2):
+    return
 
 
 if __name__ == '__main__':
