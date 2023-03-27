@@ -69,7 +69,11 @@ def jac_calc(line, sig_dict, jacobian_thr):
 
 
 def jacobian(s1, s2):
-    return
+    sim_cout = 0
+    for el1, el2 in zip(s1, s2):
+        if el1 == el2:
+            sim_cout += 1
+    return sim_cout / len(s1)
 
 
 if __name__ == '__main__':
