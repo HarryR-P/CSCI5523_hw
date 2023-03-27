@@ -61,11 +61,14 @@ def count_bins(line):
     return [tuple(sorted(pair)) for pair in pairs]
 
 
-def jac_calc(line, sig_dict, jacobian_thr):
+def jac_calc(line, sig_dict):
     id_1 = line[0]
     id_2 = line[1]
     sig_1 = sig_dict[id_1]
     sig_2 = sig_dict[id_2]
+    sim = jacobian(sig_1, sig_2)
+    return ((id_1, id_2),sim)
+
 
 
 def jacobian(s1, s2):
