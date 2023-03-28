@@ -4,6 +4,7 @@ import time
 import pyspark
 import findspark
 import gc
+from collections import defaultdict
 from itertools import combinations
 
 
@@ -29,23 +30,21 @@ def main(input_file, output_file, jac_thr, n_bands, n_rows, sc : pyspark.SparkCo
 
 def minhash_map(line, user_list, n_bands, n_rows):
     business_id = line[0]
-    ratings_set = set(line[1])
+    ratings_set = line[1]
     bins = len(user_list)
-    hash_function = lambda x,a: (a*x + 25) % bins
-    bit_list = []
+    hash_function = lambda x,a: (a*x + 1000) % bins
+    minHash_dict = defaultdict(int)
     # minhash
-    for user_id in user_list:
-        if user_id in ratings_set:
-            bit_list.append(1)
-        else:
-            bit_list.append(0)
+    for rating_id in ratings_set:
+        idx = user_list.index(rating_id)
+        minHash_dict[idx] = 1
     # signature
     signature_buckets = n_bands * n_rows
     min_sig = []
     for a in range(signature_buckets):
-        for position  in range(len(user_list)):
+        for position in range(len(user_list)):
             index = hash_function(position, a)
-            if bit_list[index] == 1:
+            if minHash_dict[index]:
                 min_sig.append(index)
                 break
 

@@ -3,16 +3,33 @@ import json
 import time
 import pyspark
 import findspark
+from collections import defaultdict
 from itertools import combinations
 
 def main():
-    sim = [('a','b',0.5), ('c','d', 0.8)]
+    start = time.time()
+    user_list = list(range(50000))
 
-    with open('C:\\Users\\harri\\Documents\\CSCI_5523_local\\CSCI5523_hw\\Hw3\\test.json', 'w') as outfile:
-        for i, pair in enumerate(sim):
-            json_dict = {'b1':pair[0], 'b2':pair[1], 'sim':pair[2]}
-            json.dump(json_dict, outfile)
-            outfile.write('\n')
+    ratings_set = [1, 6250, 7000, 40000]
+    bins = len(user_list)
+    hash_function = lambda x,a: ((a + 1)*x + 1000) % bins
+    minHash_dict = defaultdict(bool)
+    bit_list = []
+    # minhash
+    for rating_id in ratings_set:
+        idx = user_list.index(rating_id)
+        minHash_dict[idx] = True
+    print(time.time() - start)
+    signature_buckets = 100
+    min_sig = []
+    bucket_list = list(range(signature_buckets))
+    for position in range(len(user_list)):
+        indexs = [hash_function(position, a) for a in range(signature_buckets)]
+        for index in indexs:
+            if minHash_dict[index]:
+                min_sig.append(index)
+
+    print(time.time() - start)
     return
 
 def jacobian(s1, s2):
