@@ -11,24 +11,23 @@ def main(input_file, output_file, jac_thr, n_bands, n_rows, sc : pyspark.SparkCo
 
     review_rdd = sc.textFile(input_file).map(lambda x: json.loads(x))
     review_matrix_rdd = review_rdd.map(lambda x: (x['business_id'],x['user_id'])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)\
-        .map(lambda x: (x[0],sorted([*set(x[1])])))
-    user_list = review_rdd.map(lambda x: x['user_id']).distinct().sortBy(lambda x: x).collect()
-    sig_rdd = review_matrix_rdd.map(lambda x: minhash_map(x, user_list))
-    del user_list
-    gc.collect()
+        .map(lambda x: (x[0],[*set(x[1])]))
+    user_list = review_rdd.map(lambda x: x['user_id']).distinct().collect()
+    sig_rdd = review_matrix_rdd.map(lambda x: minhash_map(x, user_list, n_bands, n_rows))
     sig_dict = sig_rdd.collectAsMap()
-    bin_rdd = sig_rdd.flatMap(lambda x: seperate_bands(x, band_num=n_bands, band_bins=n_rows)).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)
-    canadatePairs_rdd = bin_rdd.flatMap(lambda x: count_bins(x)).distinct()
-    sim = canadatePairs_rdd.map(lambda x: jac_calc(x,sig_dict)).filter(lambda x: x[2] > jac_thr).collect()
+    #bin_rdd = sig_rdd.flatMap(lambda x: seperate_bands(x, n_rows=n_rows, buckets=500)).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x: (x[0],[*set(x[1])]))
+    print(sig_dict)
+    # canadatePairs_rdd = bin_rdd.flatMap(lambda x: count_bins(x)).distinct()
+    # sim = canadatePairs_rdd.map(lambda x: jac_calc(x,sig_dict)).filter(lambda x: x[2] > jac_thr).collect()
 
-    with open(output_file, 'w') as outfile:
-        for pair in sim:
-            json_dict = {'b1':pair[0], 'b2':pair[1], 'sim':pair[2]}
-            json.dump(json_dict, outfile)
-            outfile.write('\n')
+    # with open(output_file, 'w') as outfile:
+    #     for pair in sim:
+    #         json_dict = {'b1':pair[0], 'b2':pair[1], 'sim':pair[2]}
+    #         json.dump(json_dict, outfile)
+    #         outfile.write('\n')
  
 
-def minhash_map(line, user_list):
+def minhash_map(line, user_list, n_bands, n_rows):
     business_id = line[0]
     ratings_set = set(line[1])
     bins = len(user_list)
@@ -41,30 +40,30 @@ def minhash_map(line, user_list):
         else:
             bit_list.append(0)
     # signature
-    signature_buckets = 30
-    min_sig = [float('inf') for _ in range(signature_buckets)]
+    signature_buckets = n_bands * n_rows
+    min_sig = []
     for a in range(signature_buckets):
         for position  in range(len(user_list)):
             index = hash_function(position, a)
-            if bit_list[position] == 1 and min_sig[a] > index:
-                min_sig[a] = index
+            if bit_list[index] == 1:
+                min_sig.append(index)
+                break
+
     return (business_id, min_sig)
 
 
-def seperate_bands(line, band_num, band_bins):
+def seperate_bands(line, n_rows, buckets):
     business_id = line[0]
     sig = line[1]
-    row_size = int(len(sig) / band_num)
-    band_list = [sig[i:i+row_size] for i in range(0, len(sig), row_size)]
+    band_list = [sig[i:i+n_rows] for i in range(0, len(sig), n_rows)]
     # hash-to-bins
-    hash_func = lambda band: (5*sum(band) + 10) % band_bins
+    hash_func = lambda band: (10*sum(band) + 10) % buckets
     bin_list = [hash_func(band) for band in band_list]
     return [(bin, business_id) for bin in bin_list]
 
 
 def count_bins(line):
-    business_id = set(line[1])
-    bin = line[0]
+    business_id = line[1]
     if len(business_id) < 2: return []
     pairs = combinations(business_id, 2)
     return [tuple(sorted(pair)) for pair in pairs]
