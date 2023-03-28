@@ -3,6 +3,7 @@ import json
 import time
 import pyspark
 import findspark
+import gc
 from itertools import combinations
 
 
@@ -13,11 +14,19 @@ def main(input_file, output_file, jac_thr, n_bands, n_rows, sc : pyspark.SparkCo
         .map(lambda x: (x[0],sorted([*set(x[1])])))
     user_list = review_rdd.map(lambda x: x['user_id']).distinct().sortBy(lambda x: x).collect()
     sig_rdd = review_matrix_rdd.map(lambda x: minhash_map(x, user_list))
+    del user_list
+    gc.collect()
     sig_dict = sig_rdd.collectAsMap()
     bin_rdd = sig_rdd.flatMap(lambda x: seperate_bands(x, band_num=n_bands, band_bins=n_rows)).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)
     canadatePairs_rdd = bin_rdd.flatMap(lambda x: count_bins(x)).distinct()
+    sim = canadatePairs_rdd.map(lambda x: jac_calc(x,sig_dict)).filter(lambda x: x[2] > jac_thr).collect()
 
-    
+    with open(output_file, 'w') as outfile:
+        for pair in sim:
+            json_dict = {'b1':pair[0], 'b2':pair[1], 'sim':pair[2]}
+            json.dump(json_dict, outfile)
+            outfile.write('\n')
+ 
 
 def minhash_map(line, user_list):
     business_id = line[0]
@@ -67,8 +76,7 @@ def jac_calc(line, sig_dict):
     sig_1 = sig_dict[id_1]
     sig_2 = sig_dict[id_2]
     sim = jacobian(sig_1, sig_2)
-    return ((id_1, id_2),sim)
-
+    return (id_1, id_2, sim)
 
 
 def jacobian(s1, s2):
