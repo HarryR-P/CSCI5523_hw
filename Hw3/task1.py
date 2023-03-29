@@ -2,8 +2,7 @@ import argparse
 import json
 import time
 import pyspark
-import findspark
-import gc
+# import findspark
 from collections import defaultdict
 from itertools import combinations
 
@@ -11,15 +10,13 @@ from itertools import combinations
 def main(input_file, output_file, jac_thr, n_bands, n_rows, sc : pyspark.SparkContext):
 
     review_rdd = sc.textFile(input_file).map(lambda x: json.loads(x))
-    review_matrix_rdd = review_rdd.map(lambda x: (x['business_id'],x['user_id'])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)\
-        .map(lambda x: (x[0],[*set(x[1])]))
+    review_matrix_rdd = review_rdd.map(lambda x: (x['business_id'],x['user_id'])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],[*set(x[1])]))
     user_list = review_rdd.map(lambda x: x['user_id']).distinct().collect()
     minhash_rdd = review_matrix_rdd.map(lambda x: minhash_map(x, user_list))
-    minhash_dict = minhash_rdd.collectAsMap()
-    bin_rdd = minhash_rdd.flatMap(lambda x: create_signatures(x, n_bands, n_rows, user_size=len(user_list), buckets=500000)).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)\
-        .map(lambda x: (x[0],[*set(x[1])]))
+    #minhash_dict = minhash_rdd.collectAsMap()
+    bin_rdd = minhash_rdd.flatMap(lambda x: create_signatures(x, n_bands, n_rows, user_size=len(user_list))).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],[*set(x[1])]))
     canadatePairs_rdd = bin_rdd.flatMap(lambda x: count_bins(x)).distinct()
-    sim = canadatePairs_rdd.map(lambda x: jac_calc(x,minhash_dict)).filter(lambda x: x[2] > jac_thr).collect()
+    sim = canadatePairs_rdd.map(lambda x: jac_calc(x)).filter(lambda x: x[2] > jac_thr).collect()
 
     with open(output_file, 'w') as outfile:
         for pair in sim:
@@ -35,43 +32,41 @@ def minhash_map(line, user_list):
     for rating_id in ratings_set:
         idx = user_list.index(rating_id)
         position_list.append(idx)
-    return (business_id, position_list)
+    return (business_id, tuple(position_list))
 
 
-def create_signatures(line, n_bands, n_rows, user_size, buckets):
+def create_signatures(line, n_bands, n_rows, user_size):
     business_id = line[0]
     min_hash = line[1]
     # create signature
     signature_buckets = n_bands * n_rows
     min_sig = [float('inf') for _ in range(signature_buckets)]
-    hash_function = lambda x,a: (a*x + int(user_size/2)) % user_size
-    primes = gen_primes()
+    hash_function = lambda x,a: ((a+3)*x + int(user_size/2) + a) % user_size
     for i in range(signature_buckets):
-        prime = next(primes)
         for position in min_hash:
-            index = hash_function(position, prime)
+            index = hash_function(position, i)
             if index < min_sig[i]:
                 min_sig[i] = index
     # seperate bands
-    band_list = [min_sig[i:i+n_rows] for i in range(0, signature_buckets, n_rows)]
+    # band_list = [min_sig[i:i+n_rows] for i in range(0, signature_buckets, n_rows)]
     # hash-to-bins
-    hash_func = lambda band: (sum([359*val for val in band]) + int((buckets/2))) % buckets
-    bin_list = [hash_func(band) for band in band_list]
-    return [(bin, business_id) for bin in bin_list]
+    # hash_func = lambda band: (sum([359*val for val in band]) + int((buckets/2))) % buckets
+    # bin_list = [hash_func(band) for band in band_list]
+    return [(tuple(min_sig[i:i+n_rows]), (business_id,min_hash)) for i in range(0, signature_buckets, n_rows)]
 
 
 def count_bins(line):
     business_id = line[1]
     if len(business_id) < 2: return []
-    pairs = combinations(business_id, 2)
-    return [tuple(sorted(pair)) for pair in pairs]
+    pairs = combinations(range(len(business_id)), 2)
+    return [tuple(sorted((business_id[pair[0]], business_id[pair[1]]), key=lambda x: x[0])) for pair in pairs]
 
 
-def jac_calc(line, sig_dict):
-    id_1 = line[0]
-    id_2 = line[1]
-    sig_1 = sig_dict[id_1]
-    sig_2 = sig_dict[id_2]
+def jac_calc(line):
+    id_1 = line[0][0]
+    id_2 = line[1][0]
+    sig_1 = line[0][1]
+    sig_2 = line[1][1]
     sim = jacobian(sig_1, sig_2)
     return (id_1, id_2, sim)
 
@@ -80,10 +75,10 @@ def jacobian(s1, s2):
     s1_len = len(s1)
     s2_len = len(s2)
     if s1_len > s2_len:
-        min_set = set(s2)
+        min_set = s2
         max_set = set(s1)
     else:
-        min_set = set(s1)
+        min_set = s1
         max_set = set(s2)
     sim_cout = 0
     for position in min_set:
@@ -92,22 +87,8 @@ def jacobian(s1, s2):
     return sim_cout / max(s1_len,s2_len)
 
 
-def gen_primes():
-    seen = {}
-    cur = 2
-    while True:
-        if cur not in seen:
-            yield cur
-            seen[cur * cur] = [cur]
-        else:
-            for prime in seen[cur]:
-                seen.setdefault(prime + cur, []).append(prime)
-            del seen[cur]
-        cur += 1
-
-
 if __name__ == '__main__':
-    findspark.init()
+    # findspark.init()
     start_time = time.time()
     sc_conf = pyspark.SparkConf() \
         .setAppName('hw3_task1') \

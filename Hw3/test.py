@@ -7,11 +7,9 @@ from collections import defaultdict
 from itertools import combinations
 
 def main():
-    start = time.time()
-    gen = gen_primes()
-    for i in range(50):
-        print(next(gen))
-    print(time.time() - start)
+    a = (1,2,3,4)
+    for i in a:
+        print(i)
     return
 
 
