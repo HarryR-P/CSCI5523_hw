@@ -14,49 +14,48 @@ def main(input_file, output_file, jac_thr, n_bands, n_rows, sc : pyspark.SparkCo
     review_matrix_rdd = review_rdd.map(lambda x: (x['business_id'],x['user_id'])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)\
         .map(lambda x: (x[0],[*set(x[1])]))
     user_list = review_rdd.map(lambda x: x['user_id']).distinct().collect()
-    sig_rdd = review_matrix_rdd.map(lambda x: minhash_map(x, user_list, n_bands, n_rows))
-    sig_dict = sig_rdd.collectAsMap()
-    #bin_rdd = sig_rdd.flatMap(lambda x: seperate_bands(x, n_rows=n_rows, buckets=500)).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x: (x[0],[*set(x[1])]))
-    print(sig_dict)
-    # canadatePairs_rdd = bin_rdd.flatMap(lambda x: count_bins(x)).distinct()
-    # sim = canadatePairs_rdd.map(lambda x: jac_calc(x,sig_dict)).filter(lambda x: x[2] > jac_thr).collect()
+    minhash_rdd = review_matrix_rdd.map(lambda x: minhash_map(x, user_list))
+    minhash_dict = minhash_rdd.collectAsMap()
+    bin_rdd = minhash_rdd.flatMap(lambda x: create_signatures(x, n_bands, n_rows, user_size=len(user_list), buckets=500000)).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)\
+        .map(lambda x: (x[0],[*set(x[1])]))
+    canadatePairs_rdd = bin_rdd.flatMap(lambda x: count_bins(x)).distinct()
+    sim = canadatePairs_rdd.map(lambda x: jac_calc(x,minhash_dict)).filter(lambda x: x[2] > jac_thr).collect()
 
-    # with open(output_file, 'w') as outfile:
-    #     for pair in sim:
-    #         json_dict = {'b1':pair[0], 'b2':pair[1], 'sim':pair[2]}
-    #         json.dump(json_dict, outfile)
-    #         outfile.write('\n')
+    with open(output_file, 'w') as outfile:
+        for pair in sim:
+            json_dict = {'b1':pair[0], 'b2':pair[1], 'sim':pair[2]}
+            outfile.write(json.dumps(json_dict) + '\n')
  
 
-def minhash_map(line, user_list, n_bands, n_rows):
+def minhash_map(line, user_list):
     business_id = line[0]
     ratings_set = line[1]
-    bins = len(user_list)
-    hash_function = lambda x,a: (a*x + 1000) % bins
-    minHash_dict = defaultdict(int)
+    position_list = []
     # minhash
     for rating_id in ratings_set:
         idx = user_list.index(rating_id)
-        minHash_dict[idx] = 1
-    # signature
-    signature_buckets = n_bands * n_rows
-    min_sig = []
-    for a in range(signature_buckets):
-        for position in range(len(user_list)):
-            index = hash_function(position, a)
-            if minHash_dict[index]:
-                min_sig.append(index)
-                break
-
-    return (business_id, min_sig)
+        position_list.append(idx)
+    return (business_id, position_list)
 
 
-def seperate_bands(line, n_rows, buckets):
+def create_signatures(line, n_bands, n_rows, user_size, buckets):
     business_id = line[0]
-    sig = line[1]
-    band_list = [sig[i:i+n_rows] for i in range(0, len(sig), n_rows)]
+    min_hash = line[1]
+    # create signature
+    signature_buckets = n_bands * n_rows
+    min_sig = [float('inf') for _ in range(signature_buckets)]
+    hash_function = lambda x,a: (a*x + int(user_size/2)) % user_size
+    primes = gen_primes()
+    for i in range(signature_buckets):
+        prime = next(primes)
+        for position in min_hash:
+            index = hash_function(position, prime)
+            if index < min_sig[i]:
+                min_sig[i] = index
+    # seperate bands
+    band_list = [min_sig[i:i+n_rows] for i in range(0, signature_buckets, n_rows)]
     # hash-to-bins
-    hash_func = lambda band: (10*sum(band) + 10) % buckets
+    hash_func = lambda band: (sum([359*val for val in band]) + int((buckets/2))) % buckets
     bin_list = [hash_func(band) for band in band_list]
     return [(bin, business_id) for bin in bin_list]
 
@@ -78,11 +77,33 @@ def jac_calc(line, sig_dict):
 
 
 def jacobian(s1, s2):
+    s1_len = len(s1)
+    s2_len = len(s2)
+    if s1_len > s2_len:
+        min_set = set(s2)
+        max_set = set(s1)
+    else:
+        min_set = set(s1)
+        max_set = set(s2)
     sim_cout = 0
-    for el1, el2 in zip(s1, s2):
-        if el1 == el2:
+    for position in min_set:
+        if position in max_set:
             sim_cout += 1
-    return sim_cout / len(s1)
+    return sim_cout / max(s1_len,s2_len)
+
+
+def gen_primes():
+    seen = {}
+    cur = 2
+    while True:
+        if cur not in seen:
+            yield cur
+            seen[cur * cur] = [cur]
+        else:
+            for prime in seen[cur]:
+                seen.setdefault(prime + cur, []).append(prime)
+            del seen[cur]
+        cur += 1
 
 
 if __name__ == '__main__':
