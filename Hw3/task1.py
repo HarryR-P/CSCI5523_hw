@@ -2,7 +2,7 @@ import argparse
 import json
 import time
 import pyspark
-# import findspark
+#import findspark
 from collections import defaultdict
 from itertools import combinations
 
@@ -14,7 +14,7 @@ def main(input_file, output_file, jac_thr, n_bands, n_rows, sc : pyspark.SparkCo
     user_list = review_rdd.map(lambda x: x['user_id']).distinct().collect()
     minhash_rdd = review_matrix_rdd.map(lambda x: minhash_map(x, user_list))
     #minhash_dict = minhash_rdd.collectAsMap()
-    bin_rdd = minhash_rdd.flatMap(lambda x: create_signatures(x, n_bands, n_rows, user_size=len(user_list))).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],[*set(x[1])]))
+    bin_rdd = minhash_rdd.flatMap(lambda x: create_signatures(x, user_list, n_bands, n_rows, user_size=len(user_list))).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],[*set(x[1])]))
     canadatePairs_rdd = bin_rdd.flatMap(lambda x: count_bins(x)).distinct()
     sim = canadatePairs_rdd.map(lambda x: jac_calc(x)).filter(lambda x: x[2] > jac_thr).collect()
 
@@ -35,16 +35,16 @@ def minhash_map(line, user_list):
     return (business_id, tuple(position_list))
 
 
-def create_signatures(line, n_bands, n_rows, user_size):
+def create_signatures(line, user_list, n_bands, n_rows, user_size):
     business_id = line[0]
     min_hash = line[1]
     # create signature
     signature_buckets = n_bands * n_rows
     min_sig = [float('inf') for _ in range(signature_buckets)]
-    hash_function = lambda x,a: ((a+3)*x + int(user_size/2) + a) % user_size
+    hash_function = lambda x,a: ((a+3)*hash(x) + int(user_size/2) + a) % user_size
     for i in range(signature_buckets):
         for position in min_hash:
-            index = hash_function(position, i)
+            index = hash_function(user_list[position], i)
             if index < min_sig[i]:
                 min_sig[i] = index
     # seperate bands
@@ -72,23 +72,16 @@ def jac_calc(line):
 
 
 def jacobian(s1, s2):
-    s1_len = len(s1)
-    s2_len = len(s2)
-    if s1_len > s2_len:
-        min_set = s2
-        max_set = set(s1)
-    else:
-        min_set = s1
-        max_set = set(s2)
+    s2_set = set(s2)
     sim_cout = 0
-    for position in min_set:
-        if position in max_set:
+    for position in s1:
+        if position in s2_set:
             sim_cout += 1
-    return sim_cout / max(s1_len,s2_len)
+    return sim_cout / max(len(s1),len(s2))
 
 
 if __name__ == '__main__':
-    # findspark.init()
+    #findspark.init()
     start_time = time.time()
     sc_conf = pyspark.SparkConf() \
         .setAppName('hw3_task1') \
