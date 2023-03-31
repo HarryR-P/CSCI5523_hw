@@ -2,7 +2,7 @@ import argparse
 import json
 import time
 import pyspark
-#import findspark
+import findspark
 from collections import defaultdict
 from itertools import combinations
 
@@ -81,7 +81,7 @@ def jacobian(s1, s2):
 
 
 if __name__ == '__main__':
-    #findspark.init()
+    findspark.init()
     start_time = time.time()
     sc_conf = pyspark.SparkConf() \
         .setAppName('hw3_task1') \

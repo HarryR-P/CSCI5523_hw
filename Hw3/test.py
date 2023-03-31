@@ -7,8 +7,8 @@ from collections import defaultdict
 from itertools import combinations
 
 def main():
-    sig_matrix = [[float('inf') for _ in range(100)] for _ in range(31606)]
-    print(sig_matrix[1])
+    f = 1.1111111
+    print(round(f,3))
     return
 
 
