@@ -40,7 +40,7 @@ def map_co_rated(line):
     ratings_list = line[1]
     if len(ratings_list) < 2: return []
     pairs = combinations(ratings_list,2)
-    return [(tuple(sorted(pair, key=lambda x: x[0])),1) for pair in pairs]
+    return [(tuple(sorted(pair)),1) for pair in pairs]
 
 
 def calc_corr(line):

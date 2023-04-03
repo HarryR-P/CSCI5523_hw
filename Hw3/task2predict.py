@@ -2,7 +2,6 @@ import argparse
 import json
 import time
 import pyspark
-import math
 #import findspark
 
 
@@ -10,9 +9,10 @@ import math
 def main(train_file, test_file, model_file, output_file, n_weights, sc : pyspark.SparkContext):
     review_rdd = sc.textFile(train_file).map(lambda x: json.loads(x))
     test_rdd = sc.textFile(test_file).map(lambda x: json.loads(x)).map(lambda x: (x['user_id'],x['business_id']))
-    model_rdd = sc.textFile(model_file).map(lambda x: json.loads(x)).flatMap(lambda x: [(x['b1'],(x['b2'],x['sim'])),(x['b2'],(x['b1'],x['sim']))]).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)
+    model_rdd = sc.textFile(model_file).map(lambda x: json.loads(x)).flatMap(lambda x: [(x['b1'],(x['b2'],x['sim'])),(x['b2'],(x['b1'],x['sim']))])\
+        .distinct().aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)
     bis_review_matrix_rdd = review_rdd.map(lambda x: (x['user_id'],(x['business_id'], x['stars']))).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x: map_to_matrix(x))
-    user_sig_rdd = test_rdd.join(bis_review_matrix_rdd).map(lambda x: (x[1][0],(x[0], x[1][1]))).join(model_rdd).map(lambda x: ((x[1][0][0], x[0]), (x[1][0][1], x[1][1])))
+    user_sig_rdd = test_rdd.leftOuterJoin(bis_review_matrix_rdd).map(lambda x: (x[1][0],(x[0], x[1][1]))).leftOuterJoin(model_rdd).map(lambda x: ((x[1][0][0], x[0]), (x[1][0][1], x[1][1])))
     pred = user_sig_rdd.map(lambda x: find_topn(x, n_weights)).map(lambda x: calc_pred(x)).collect()
     
     with open(output_file, 'w') as outfile:
@@ -36,20 +36,33 @@ def map_to_matrix(line):
 def find_topn(line, n_weights):
     uid = line[0][0]
     bid = line[0][1]
-    star_dict = {bid:stars for bid, stars in line[1][0]}
-    corr_dict = {bid:corr for bid, corr in line[1][1]}
-    return_list = []
+    if line[1][0] is None:
+        stars = []
+    else:
+        stars = line[1][0]
+    if line[1][1] is None:
+        corrs = []
+    else:
+        corrs = line[1][1]
+    star_dict = {bid:stars for bid, stars in stars}
+    corr_dict = {bid:corr for bid, corr in corrs}
+    n_list = [None for _ in range(n_weights)]
     max_corr = [float('-inf') for _ in range(n_weights)]
+    min_n = 0
     for bid in star_dict:
         if bid in corr_dict:
-            for n in range(n_weights):
-                if max_corr[n] < corr_dict[bid]:
-                    max_corr[n] = corr_dict[bid]
-                    if n >= len(return_list):
-                        return_list.append((bid, star_dict[bid], corr_dict[bid]))
-                    else:
-                        return_list[n] = (bid, star_dict[bid], corr_dict[bid])
-                    break
+            if max_corr[min_n] < corr_dict[bid]:
+                max_corr[min_n] = corr_dict[bid]
+                n_list[min_n] = (bid, star_dict[bid], corr_dict[bid])
+                min_c = float('inf')
+                for i, corr in enumerate(max_corr):
+                    if min_c > corr:
+                        min_c = corr
+                        min_n = i
+    return_list = []
+    for item in n_list:
+        if item is not None:
+            return_list.append(item)
 
     return (uid, bid, return_list)
 
@@ -66,8 +79,8 @@ def calc_pred(line):
     if denominator != 0.0:
         pred = numerator / denominator
     else:
-        pred = 0.0
-    return (uid, bid, pred)
+        pred = 0.1
+    return (uid, bid, max(pred, 0.1))
 
 if __name__ == '__main__':
     #findspark.init()
