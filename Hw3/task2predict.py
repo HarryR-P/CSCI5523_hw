@@ -9,7 +9,7 @@ import pyspark
 def main(train_file, test_file, model_file, output_file, n_weights, sc : pyspark.SparkContext):
     review_rdd = sc.textFile(train_file).map(lambda x: json.loads(x))
     test_rdd = sc.textFile(test_file).map(lambda x: json.loads(x)).map(lambda x: (x['user_id'],x['business_id']))
-    model_rdd = sc.textFile(model_file).map(lambda x: json.loads(x)).flatMap(lambda x: [(x['b1'],(x['b2'],x['sim'])),(x['b2'],(x['b1'],x['sim']))])\
+    model_rdd = sc.textFile(model_file).map(lambda x: json.loads(x)).flatMap(lambda x: [(x['b1'],(x['b2'],x['sim'])),(x['b2'],(x['b1'],x['sim']))]) \
         .distinct().aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)
     bis_review_matrix_rdd = review_rdd.map(lambda x: (x['user_id'],(x['business_id'], x['stars']))).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x: map_to_matrix(x))
     user_sig_rdd = test_rdd.leftOuterJoin(bis_review_matrix_rdd).map(lambda x: (x[1][0],(x[0], x[1][1]))).leftOuterJoin(model_rdd).map(lambda x: ((x[1][0][0], x[0]), (x[1][0][1], x[1][1])))
@@ -76,11 +76,8 @@ def calc_pred(line):
     for bid2, stars, corr in data_list:
         numerator += stars*corr
         denominator += abs(corr)
-    if denominator != 0.0:
-        pred = numerator / denominator
-    else:
-        pred = 0.1
-    return (uid, bid, max(pred, 0.1))
+    pred = numerator / (denominator + 0.0000001)
+    return (uid, bid, max(min(pred, 5.0), 0.1))
 
 if __name__ == '__main__':
     #findspark.init()

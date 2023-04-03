@@ -59,10 +59,7 @@ def calc_corr(line):
             numerator += (sig_dict_1[uid] - avg1)*(sig_dict_2[uid] - avg2)
             denominator1 += (sig_dict_1[uid] - avg1)**2
             denominator2 += (sig_dict_2[uid] - avg2)**2
-    if denominator1 != 0.0 and denominator2 != 0.0:
-        corr = numerator / (math.sqrt(denominator1)*math.sqrt(denominator2))
-    else:
-        corr = 0.0
+    corr = numerator / (math.sqrt(denominator1 + 0.00000001)*math.sqrt(denominator2 + 0.00000001))
     return (b1,b2,corr)
 
 
