@@ -2,7 +2,8 @@ import argparse
 import json
 import time
 import pyspark
-import findspark
+#import findspark
+from random import shuffle
 from collections import defaultdict
 from itertools import combinations
 
@@ -10,13 +11,16 @@ from itertools import combinations
 def main(input_file, output_file, jac_thr, n_bands, n_rows, sc : pyspark.SparkContext):
 
     review_rdd = sc.textFile(input_file).map(lambda x: json.loads(x))
-    review_matrix_rdd = review_rdd.map(lambda x: (x['business_id'],x['user_id'])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],[*set(x[1])]))
-    user_list = review_rdd.map(lambda x: x['user_id']).distinct().collect()
-    minhash_rdd = review_matrix_rdd.map(lambda x: minhash_map(x, user_list))
+    review_matrix_rdd = review_rdd.map(lambda x: (x['business_id'],x['user_id'])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],(*set(x[1]),)))
+    #univ_set = review_rdd.map(lambda x: x['user_id']).distinct().collect()
+    univ_count = review_rdd.map(lambda x: x['user_id']).distinct().count()
+    #minhash_rdd = review_matrix_rdd.map(lambda x: minhash_map(x, user_list))
     #minhash_dict = minhash_rdd.collectAsMap()
-    bin_rdd = minhash_rdd.flatMap(lambda x: create_signatures(x, user_list, n_bands, n_rows, user_size=len(user_list))).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],[*set(x[1])]))
+    prime_list = [p for p in gen_primes(n_bands * n_rows)]
+    shuffle(prime_list)
+    bin_rdd = review_matrix_rdd.flatMap(lambda x: create_signatures(x, prime_list, n_bands, n_rows, user_size=univ_count)).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],[*set(x[1])]))
     canadatePairs_rdd = bin_rdd.flatMap(lambda x: count_bins(x)).distinct()
-    sim = canadatePairs_rdd.map(lambda x: jac_calc(x)).filter(lambda x: x[2] > jac_thr).collect()
+    sim = canadatePairs_rdd.map(lambda x: jac_calc(x)).filter(lambda x: x[2] >= jac_thr).collect()
 
     with open(output_file, 'w') as outfile:
         for pair in sim:
@@ -24,42 +28,44 @@ def main(input_file, output_file, jac_thr, n_bands, n_rows, sc : pyspark.SparkCo
             outfile.write(json.dumps(json_dict) + '\n')
  
 
-def minhash_map(line, user_list):
-    business_id = line[0]
-    ratings_set = line[1]
-    position_list = []
-    # minhash
-    for rating_id in ratings_set:
-        idx = user_list.index(rating_id)
-        position_list.append(idx)
-    return (business_id, tuple(position_list))
+# def minhash_map(line, user_list):
+#     business_id = line[0]
+#     ratings_set = line[1]
+#     position_list = []
+#     # minhash
+#     for rating_id in ratings_set:
+#         idx = user_list.index(rating_id)
+#         position_list.append(idx)
+#     return (business_id, tuple(position_list))
 
 
-def create_signatures(line, user_list, n_bands, n_rows, user_size):
+def create_signatures(line, primes, n_bands, n_rows, user_size):
     business_id = line[0]
-    min_hash = line[1]
+    user_list = line[1]
     # create signature
     signature_buckets = n_bands * n_rows
     min_sig = [float('inf') for _ in range(signature_buckets)]
-    hash_function = lambda x,a: ((a+3)*hash(x) + int(user_size/2) + a) % user_size
-    for i in range(signature_buckets):
-        for position in min_hash:
-            index = hash_function(user_list[position], i)
+    hash_function = lambda x, p, i: (p*x + i) % user_size
+    #positions = [univ_set.index(uid) for uid in user_list]
+    for i, p in enumerate(primes):
+        for uid in user_list:
+            index = hash_function(hash(uid), p, i)
             if index < min_sig[i]:
                 min_sig[i] = index
     # seperate bands
     # band_list = [min_sig[i:i+n_rows] for i in range(0, signature_buckets, n_rows)]
     # hash-to-bins
-    # hash_func = lambda band: (sum([359*val for val in band]) + int((buckets/2))) % buckets
-    # bin_list = [hash_func(band) for band in band_list]
-    return [(tuple(min_sig[i:i+n_rows]), (business_id,min_hash)) for i in range(0, signature_buckets, n_rows)]
+    #hash_func = lambda band: (sum([359*val for val in band]) + 50000) % 100000
+    #bin_list = [(hash_func(min_sig[i:i+n_rows]), (business_id,user_list)) for i in range(0, signature_buckets, n_rows)]
+    # [(tuple(min_sig[i:i+n_rows]), (business_id,user_list)) for i in range(0, signature_buckets, n_rows)]
+    return [(tuple(sorted(min_sig[i:i+n_rows])), (business_id,user_list)) for i in range(0, signature_buckets, n_rows)]
 
 
 def count_bins(line):
     business_id = line[1]
     if len(business_id) < 2: return []
     pairs = combinations(range(len(business_id)), 2)
-    return [tuple(sorted((business_id[pair[0]], business_id[pair[1]]), key=lambda x: x[0])) for pair in pairs]
+    return [tuple(sorted((business_id[pair[0]], business_id[pair[1]]),key=lambda x: x[0])) for pair in pairs]
 
 
 def jac_calc(line):
@@ -80,8 +86,24 @@ def jacobian(s1, s2):
     return sim_cout / max(len(s1),len(s2))
 
 
+def gen_primes(count):
+    past = {}
+    prime = 2
+    i = 0
+    while count > i:
+        if prime not in past:
+            i += 1
+            yield prime
+            past[prime * prime] = [prime]
+        else:
+            for p in past[prime]:
+                past.setdefault(p + prime, []).append(p)
+            del past[prime]
+        prime += 1
+
+
 if __name__ == '__main__':
-    findspark.init()
+    #findspark.init()
     start_time = time.time()
     sc_conf = pyspark.SparkConf() \
         .setAppName('hw3_task1') \

@@ -3,17 +3,16 @@ import json
 import time
 import pyspark
 import findspark
+from random import shuffle
+import task1
 from collections import defaultdict
-from itertools import combinations
+from itertools import permutations
 
 def main():
-    f = 1.1111111
-    print(round(f,3))
+    l = [1,2]
+    c = list(permutations(l,2))
+    print(c)
     return
-
-
-def func(matrix):
-    matrix[0].append(1)
 
 
 if __name__ == '__main__':
