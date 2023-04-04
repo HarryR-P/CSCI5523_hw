@@ -13,12 +13,13 @@ def main(train_file, test_file, model_file, output_file, n_weights, sc : pyspark
         .distinct().aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)
     bis_review_matrix_rdd = review_rdd.map(lambda x: (x['user_id'],(x['business_id'], x['stars']))).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x: map_to_matrix(x))
     user_sig_rdd = test_rdd.leftOuterJoin(bis_review_matrix_rdd).map(lambda x: (x[1][0],(x[0], x[1][1]))).leftOuterJoin(model_rdd).map(lambda x: ((x[1][0][0], x[0]), (x[1][0][1], x[1][1])))
-    pred = user_sig_rdd.map(lambda x: find_topn(x, n_weights)).map(lambda x: calc_pred(x)).collect()
+    print(user_sig_rdd.filter(lambda x: x[0][0]=='XWE5tl-90GWf4DUT4VHBPQ').collect())
+    #pred = user_sig_rdd.map(lambda x: find_topn(x, n_weights)).map(lambda x: calc_pred(x)).collect()
     
-    with open(output_file, 'w') as outfile:
-        for pair in pred:
-            json_dict = {'user_id':pair[0], 'business_id':pair[1], 'stars':pair[2]}
-            outfile.write(json.dumps(json_dict) + '\n')
+    # with open(output_file, 'w') as outfile:
+    #     for pair in pred:
+    #         json_dict = {'user_id':pair[0], 'business_id':pair[1], 'stars':round(pair[2], 2)}
+    #         outfile.write(json.dumps(json_dict) + '\n')
 
 
 def map_to_matrix(line):
@@ -35,7 +36,7 @@ def map_to_matrix(line):
 
 def find_topn(line, n_weights):
     uid = line[0][0]
-    bid = line[0][1]
+    b1 = line[0][1]
     if line[1][0] is None:
         stars = []
     else:
@@ -64,7 +65,7 @@ def find_topn(line, n_weights):
         if item is not None:
             return_list.append(item)
 
-    return (uid, bid, return_list)
+    return (uid, b1, return_list)
 
 
 def calc_pred(line):
@@ -77,7 +78,7 @@ def calc_pred(line):
         numerator += stars*corr
         denominator += abs(corr)
     pred = numerator / (denominator + 0.0000001)
-    return (uid, bid, max(min(pred, 5.0), 0.1))
+    return (uid, bid, min(abs(pred),0.1))
 
 if __name__ == '__main__':
     #findspark.init()

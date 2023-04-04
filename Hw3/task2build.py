@@ -15,8 +15,9 @@ def main(train_file, model_file, co_rated_thr, sc : pyspark.SparkContext):
     co_rated_rdd = user_review_matrix_rdd.flatMap(lambda x: map_co_rated(x)).reduceByKey(lambda a,b:a+b).filter(lambda x: x[1] >= co_rated_thr).map(lambda x: (x[0][0],x[0][1]))
     bis_review_matrix_rdd = review_rdd.map(lambda x: (x['business_id'],(x['user_id'], x['stars']))).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)
     sig_dict_rdd = bis_review_matrix_rdd.map(lambda x: map_to_matrix(x))
-    pair_rdd = co_rated_rdd.join(sig_dict_rdd).map(lambda x: (x[1][0],(x[0],x[1][1]))).join(sig_dict_rdd).map(lambda x: ((x[1][0][0],x[1][0][1]),(x[0],x[1][1])))
+    pair_rdd = co_rated_rdd.leftOuterJoin(sig_dict_rdd).map(lambda x: (x[1][0],(x[0],x[1][1]))).leftOuterJoin(sig_dict_rdd).map(lambda x: ((x[1][0][0],x[1][0][1]),(x[0],x[1][1])))
     model = pair_rdd.map(lambda x: calc_corr(x)).collect()
+    #.filter(lambda x: x[2] > 0)
     
     with open(model_file, 'w') as outfile:
         for pair in model:
@@ -46,8 +47,16 @@ def map_co_rated(line):
 def calc_corr(line):
     b1 = line[0][0]
     b2 = line[1][0]
-    sig_dict_1 = {uid: stars for uid, stars in line[0][1]}
-    sig_dict_2 = {uid: stars for uid, stars in line[1][1]}
+    if line[0][1] is None:
+        sig_1 = []
+    else:
+        sig_1 = line[0][1]
+    if line[1][1] is None:
+        sig_2 = []
+    else:
+        sig_2 = line[1][1]
+    sig_dict_1 = {uid: stars for uid, stars in sig_1}
+    sig_dict_2 = {uid: stars for uid, stars in sig_2}
     avg1 = sum(sig_dict_1.values()) / len(sig_dict_1)
     avg2 = sum(sig_dict_2.values()) / len(sig_dict_2)
     
