@@ -8,18 +8,16 @@ import pyspark
 
 def main(train_file, test_file, model_file, output_file, n_weights, sc : pyspark.SparkContext):
     review_rdd = sc.textFile(train_file).map(lambda x: json.loads(x))
-    test_rdd = sc.textFile(test_file).map(lambda x: json.loads(x)).map(lambda x: (x['user_id'],x['business_id']))
+    test_rdd = sc.textFile(test_file).map(lambda x: json.loads(x)).map(lambda x: (x['business_id'],x['user_id']))
     model_rdd = sc.textFile(model_file).map(lambda x: json.loads(x)).flatMap(lambda x: [(x['b1'],(x['b2'],x['sim'])),(x['b2'],(x['b1'],x['sim']))]) \
         .distinct().aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)
-    bis_review_matrix_rdd = review_rdd.map(lambda x: (x['user_id'],(x['business_id'], x['stars']))).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x: map_to_matrix(x))
-    user_sig_rdd = test_rdd.leftOuterJoin(bis_review_matrix_rdd).map(lambda x: (x[1][0],(x[0], x[1][1]))).leftOuterJoin(model_rdd).map(lambda x: ((x[1][0][0], x[0]), (x[1][0][1], x[1][1])))
-    print(user_sig_rdd.filter(lambda x: x[0][0]=='XWE5tl-90GWf4DUT4VHBPQ').collect())
-    #pred = user_sig_rdd.map(lambda x: find_topn(x, n_weights)).map(lambda x: calc_pred(x)).collect()
+    stars_dict = review_rdd.map(lambda x: (x['user_id'],(x['business_id'], x['stars']))).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x: map_to_matrix(x)).collectAsMap()
+    pred = test_rdd.leftOuterJoin(model_rdd).map(lambda x: find_topn(x, stars_dict, n_weights)).collect()
     
-    # with open(output_file, 'w') as outfile:
-    #     for pair in pred:
-    #         json_dict = {'user_id':pair[0], 'business_id':pair[1], 'stars':round(pair[2], 2)}
-    #         outfile.write(json.dumps(json_dict) + '\n')
+    with open(output_file, 'w') as outfile:
+        for pair in pred:
+            json_dict = {'user_id':pair[0], 'business_id':pair[1], 'stars':pair[2]}
+            outfile.write(json.dumps(json_dict) + '\n')
 
 
 def map_to_matrix(line):
@@ -34,51 +32,38 @@ def map_to_matrix(line):
     return (id, rating_output)
 
 
-def find_topn(line, n_weights):
-    uid = line[0][0]
-    b1 = line[0][1]
-    if line[1][0] is None:
-        stars = []
-    else:
-        stars = line[1][0]
+def find_topn(line, stars_dict, n_weights):
+    uid = line[1][0]
+    b1 = line[0]
+    stars = stars_dict[uid]
     if line[1][1] is None:
-        corrs = []
+        sims = []
     else:
-        corrs = line[1][1]
+        sims = line[1][1]
     star_dict = {bid:stars for bid, stars in stars}
-    corr_dict = {bid:corr for bid, corr in corrs}
-    n_list = [None for _ in range(n_weights)]
-    max_corr = [float('-inf') for _ in range(n_weights)]
-    min_n = 0
+    corr_dict = {bid:corr for bid, corr in sims}
+    n_list = []
     for bid in star_dict:
         if bid in corr_dict:
-            if max_corr[min_n] < corr_dict[bid]:
-                max_corr[min_n] = corr_dict[bid]
-                n_list[min_n] = (bid, star_dict[bid], corr_dict[bid])
-                min_c = float('inf')
-                for i, corr in enumerate(max_corr):
-                    if min_c > corr:
-                        min_c = corr
-                        min_n = i
-    return_list = []
-    for item in n_list:
-        if item is not None:
-            return_list.append(item)
+            n_list.append((bid, star_dict[bid], corr_dict[bid]))
 
-    return (uid, b1, return_list)
+    n_list.sort(key=lambda x: x[2], reverse=True)
+    return_list = n_list[:n_weights]
+    
+    if len(return_list) > 0:
+        numerator = 0.0
+        denominator = 0.0
+        for bid2, stars, corr in return_list:
+            numerator += stars*corr
+            denominator += abs(corr)
+        if denominator != 0.0:
+            pred = numerator / denominator
+        else:
+            pred = 1.0     
+    else:
+        pred = sum(star_dict.values()) / len(star_dict)
+    return (uid, b1, max(pred,1.0))
 
-
-def calc_pred(line):
-    uid = line[0]
-    bid = line[1]
-    data_list = line[2]
-    numerator = 0.0
-    denominator = 0.0
-    for bid2, stars, corr in data_list:
-        numerator += stars*corr
-        denominator += abs(corr)
-    pred = numerator / (denominator + 0.0000001)
-    return (uid, bid, min(abs(pred),0.1))
 
 if __name__ == '__main__':
     #findspark.init()

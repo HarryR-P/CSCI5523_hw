@@ -14,10 +14,8 @@ def main(train_file, model_file, co_rated_thr, sc : pyspark.SparkContext):
                                 .map(lambda x: (x[0], [*set(x[1])]))
     co_rated_rdd = user_review_matrix_rdd.flatMap(lambda x: map_co_rated(x)).reduceByKey(lambda a,b:a+b).filter(lambda x: x[1] >= co_rated_thr).map(lambda x: (x[0][0],x[0][1]))
     bis_review_matrix_rdd = review_rdd.map(lambda x: (x['business_id'],(x['user_id'], x['stars']))).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b)
-    sig_dict_rdd = bis_review_matrix_rdd.map(lambda x: map_to_matrix(x))
-    pair_rdd = co_rated_rdd.leftOuterJoin(sig_dict_rdd).map(lambda x: (x[1][0],(x[0],x[1][1]))).leftOuterJoin(sig_dict_rdd).map(lambda x: ((x[1][0][0],x[1][0][1]),(x[0],x[1][1])))
-    model = pair_rdd.map(lambda x: calc_corr(x)).collect()
-    #.filter(lambda x: x[2] > 0)
+    stars_dict = bis_review_matrix_rdd.map(lambda x: map_to_matrix(x)).collectAsMap()
+    model = co_rated_rdd.map(lambda x: calc_corr(x, stars_dict)).collect()
     
     with open(model_file, 'w') as outfile:
         for pair in model:
@@ -44,17 +42,11 @@ def map_co_rated(line):
     return [(tuple(sorted(pair)),1) for pair in pairs]
 
 
-def calc_corr(line):
-    b1 = line[0][0]
-    b2 = line[1][0]
-    if line[0][1] is None:
-        sig_1 = []
-    else:
-        sig_1 = line[0][1]
-    if line[1][1] is None:
-        sig_2 = []
-    else:
-        sig_2 = line[1][1]
+def calc_corr(line, stars_dict):
+    b1 = line[0]
+    b2 = line[1] 
+    sig_1 = stars_dict[b1]
+    sig_2 = stars_dict[b2]
     sig_dict_1 = {uid: stars for uid, stars in sig_1}
     sig_dict_2 = {uid: stars for uid, stars in sig_2}
     avg1 = sum(sig_dict_1.values()) / len(sig_dict_1)
@@ -68,7 +60,11 @@ def calc_corr(line):
             numerator += (sig_dict_1[uid] - avg1)*(sig_dict_2[uid] - avg2)
             denominator1 += (sig_dict_1[uid] - avg1)**2
             denominator2 += (sig_dict_2[uid] - avg2)**2
-    corr = numerator / (math.sqrt(denominator1 + 0.00000001)*math.sqrt(denominator2 + 0.00000001))
+    if denominator1 != 0 and denominator2 != 0:
+        corr = numerator / (math.sqrt(denominator1)*math.sqrt(denominator2))
+    else:
+        corr = 0.0
+    
     return (b1,b2,corr)
 
 

@@ -9,9 +9,10 @@ from collections import defaultdict
 from itertools import permutations
 
 def main():
-    l = [1,2]
-    c = list(permutations(l,2))
-    print(c)
+    l = [('a',1),('b',2), ('c',6), ('d',5), ('e',4)]
+    l.sort(key=lambda x: x[1], reverse=True)
+    h = l[:2]
+    print(h)
     return
 
 
