@@ -2,17 +2,27 @@ import argparse
 import json
 import time
 import pyspark
+from itertools import combinations
 
 
-def main(filter_threshold, input_file, output_file, sc):
+def main(filter_threshold, input_file, output_file, sc : pyspark.SparkContext):
 
 
 
-    """ You need to write your own code """
+    data_rdd = sc.textFile(input_file).map(lambda x: x.split(','))
+    header = data_rdd.first()
+    data_rdd = data_rdd.filter(lambda x: x != header)
+    matrix_rdd = data_rdd.map(lambda x: (x[1],x[0])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],(*set(x[1]),)))
+    pairs_rdd = matrix_rdd.flatMap(map_co_thr).reduceByKey(lambda a,b: a+b).filter(lambda x: x[1] >= filter_threshold).map(lambda x: x[0])
+    edges_df = pairs_rdd.toDF('src','dst')
+    vertex_df = data_rdd.map(lambda x: x[0]).toDF('id')
+    g = GraphFrame(vertex_df, edges_df)
+    result = g.labelPropagation(maxIter=5).rdd
+    communities = result.map(lambda x: (x[1],x[0])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x: x[1]).collect()
 
 
     # example of identified communities
-    communities = [['23y0Nv9FFWn_3UWudpnFMA'],['3Vd_ATdvvuVVgn_YCpz8fw'], ['0KhRPd66BZGHCtsb9mGh_g', '5fQ9P6kbQM_E0dx8DL6JWA' ]]
+    #communities = [['23y0Nv9FFWn_3UWudpnFMA'],['3Vd_ATdvvuVVgn_YCpz8fw'], ['0KhRPd66BZGHCtsb9mGh_g', '5fQ9P6kbQM_E0dx8DL6JWA' ]]
 
     for i in communities:
         print(i)
@@ -38,6 +48,12 @@ def main(filter_threshold, input_file, output_file, sc):
             output.write(community + "\n")
     output.close()
 
+
+def map_co_thr(line):
+    ratings_list = line[1]
+    if len(ratings_list) < 2: return []
+    pairs = combinations(ratings_list,2)
+    return [(tuple(sorted(pair)),1) for pair in pairs]
 
 
 if __name__ == '__main__':
