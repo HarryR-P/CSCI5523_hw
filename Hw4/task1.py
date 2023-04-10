@@ -2,11 +2,12 @@ import argparse
 import json
 import time
 import pyspark
+import findspark
+from graphframes import GraphFrame
 from itertools import combinations
 
 
 def main(filter_threshold, input_file, output_file, sc : pyspark.SparkContext):
-
 
 
     data_rdd = sc.textFile(input_file).map(lambda x: x.split(','))
@@ -14,8 +15,8 @@ def main(filter_threshold, input_file, output_file, sc : pyspark.SparkContext):
     data_rdd = data_rdd.filter(lambda x: x != header)
     matrix_rdd = data_rdd.map(lambda x: (x[1],x[0])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],(*set(x[1]),)))
     pairs_rdd = matrix_rdd.flatMap(map_co_thr).reduceByKey(lambda a,b: a+b).filter(lambda x: x[1] >= filter_threshold).map(lambda x: x[0])
-    edges_df = pairs_rdd.toDF('src','dst')
-    vertex_df = data_rdd.map(lambda x: x[0]).toDF('id')
+    edges_df = pairs_rdd.toDF(['src','dst'])
+    vertex_df = data_rdd.map(lambda x: (x[0],)).toDF(['id'])
     g = GraphFrame(vertex_df, edges_df)
     result = g.labelPropagation(maxIter=5).rdd
     communities = result.map(lambda x: (x[1],x[0])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x: x[1]).collect()
@@ -57,6 +58,7 @@ def map_co_thr(line):
 
 
 if __name__ == '__main__':
+    findspark.init()
     start_time = time.time()
     sc_conf = pyspark.SparkConf() \
         .setAppName('hw4') \
