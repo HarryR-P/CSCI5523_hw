@@ -53,17 +53,22 @@ def map_co_thr(line):
 def calc_betweenness(uid, graph):
 
     #BFS
-    queue = [uid]
-    parent = None
+    queue = [(None,uid)]
     shortest_dist = dict([])
     shortest_num = defaultdict(int)
     while queue:
-        cur = queue.pop(0)
+        parent, cur = queue.pop(0)
         if parent is None:
             shortest_dist[cur] = 0
-        elif shortest_dist[cur] is None:
+        elif shortest_dist.setdefault(cur, float('inf')) <= shortest_dist[parent] + 1:
             shortest_dist[cur] = shortest_dist[parent] + 1
-        shortest_num[cur] += 1
+            shortest_num[cur] += 1
+        else:
+            continue
+        for child in graph[cur]:
+            if child != parent:
+                queue.append((cur,child))
+            
 
 
     start_scores = dict({})
