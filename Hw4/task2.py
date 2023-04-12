@@ -3,6 +3,7 @@ import json
 import time
 import pyspark
 from itertools import combinations
+from collections import defaultdict
 
 
 def main(filter_threshold, input_file, output_file, betweenness_output_file, sc : pyspark.SparkContext):
@@ -49,11 +50,44 @@ def map_co_thr(line):
     return [(tuple(sorted(pair)),1) for pair in pairs]
 
 
-def calc_betweenness(line, graph):
+def calc_betweenness(uid, graph):
+
+    #BFS
+    queue = [uid]
+    parent = None
+    shortest_dist = dict([])
+    shortest_num = defaultdict(int)
+    while queue:
+        cur = queue.pop(0)
+        if parent is None:
+            shortest_dist[cur] = 0
+        elif shortest_dist[cur] is None:
+            shortest_dist[cur] = shortest_dist[parent] + 1
+        shortest_num[cur] += 1
+
+
+    start_scores = dict({})
+    siblings = set({})
+    parent = None
+    scores = betweenness_recursive(uid, start_scores, graph, siblings, parent)
     return
 
 
-def betweenness_recursive(cur_node, scores, graph):
+def betweenness_recursive(cur_node, graph, siblings, parent):
+    connected_nodes = graph[cur_node]
+    children = [node for node in connected_nodes if node not in siblings]
+    if parent is not None:
+        children.remove(parent)
+    if len(children) == 0:
+        return 1, {sorted((parent, cur_node)) : 1}
+    node_val = 1
+    scores = {}
+    for child in children:
+        val, score = betweenness_recursive(child, graph, set([node for node in children if node != child]), cur_node)
+        node_val += node_val
+        
+
+
     return
 
 
