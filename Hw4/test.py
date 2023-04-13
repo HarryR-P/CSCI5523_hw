@@ -8,8 +8,7 @@ from collections import defaultdict
 def main():
     uid = 'e'
     graph = {'e':['d','f'], 'd':['e','f','b','g'], 'f':['e','d','g'], 'g':['d','f'], 'b':['d','a','c'], 'a':['b','c'], 'c':['b','a']}
-    queue = [(None,[],uid)]
-    visited = [uid]
+    queue = [(None,set([]),uid)]
     shortest_dist = dict([])
     shortest_num = defaultdict(int)
     while queue:
@@ -22,9 +21,13 @@ def main():
             shortest_num[cur] += 1
         for child in graph[cur]:
             if child != parent  and child not in siblings:
-                queue.append((cur,set([node for node in graph[cur] if node not in siblings]),child))
-            elif child != parent and shortest_dist.setdefault(child, float('inf')) == shortest_dist[cur] + 1:
-                shortest_num[child] += 1
+                child_siblings = [node for node in graph[cur] if node not in siblings and child != node]
+                for i, node in enumerate(queue):
+                    if node[2] == child:
+                        child_siblings.append(node[0])
+                        queue[i] = (node[0],set(list(node[1]) + [cur]),node[2])
+                        break
+                queue.append((cur,set(child_siblings),child))
     
     print(dict(shortest_num))
     return
