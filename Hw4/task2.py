@@ -12,35 +12,41 @@ def main(filter_threshold, input_file, output_file, betweenness_output_file, sc 
     matrix_rdd = data_rdd.map(lambda x: (x[1],x[0])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],(*set(x[1]),)))
     graph = matrix_rdd.flatMap(map_co_thr).reduceByKey(lambda a,b: a+b).filter(lambda x: x[1] >= filter_threshold).flatMap(lambda x: [x[0],(x[0][1],x[0][0])])\
         .aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).collectAsMap()
-    vertexes_rdd = data_rdd.map(lambda x: x[0]).distinct().flatMap()
+    betweenness_rdd = data_rdd.map(lambda x: x[0]).distinct().flatMap(lambda x: calc_betweenness(x, graph)).reduceByKey(lambda a,b: a+b).map(lambda x: (x[0],x[1]/2))
+    betweenness = betweenness_rdd.sortBy(lambda x: (-x[1],x[0])).collect()
 
+
+
+    with open(betweenness_output_file, 'w') as outfile:
+        for line in betweenness:
+            outfile.write(line + '\n')
 
     # example of identified communities
-    communities = [['23y0Nv9FFWn_3UWudpnFMA'],['3Vd_ATdvvuVVgn_YCpz8fw'], ['0KhRPd66BZGHCtsb9mGh_g', '5fQ9P6kbQM_E0dx8DL6JWA' ]]
+    # communities = [['23y0Nv9FFWn_3UWudpnFMA'],['3Vd_ATdvvuVVgn_YCpz8fw'], ['0KhRPd66BZGHCtsb9mGh_g', '5fQ9P6kbQM_E0dx8DL6JWA' ]]
 
-    for i in communities:
-        print(i)
+    # for i in communities:
+    #     print(i)
 
-    """ code for saving the output to file in the correct format """
-    resultDict = {}
-    for community in communities:
-        community = list(map(lambda userId: "'" + userId + "'", sorted(community)))
-        community = ", ".join(community)
+    # """ code for saving the output to file in the correct format """
+    # resultDict = {}
+    # for community in communities:
+    #     community = list(map(lambda userId: "'" + userId + "'", sorted(community)))
+    #     community = ", ".join(community)
 
-        if len(community) not in resultDict:
-            resultDict[len(community)] = []
-        resultDict[len(community)].append(community)
+    #     if len(community) not in resultDict:
+    #         resultDict[len(community)] = []
+    #     resultDict[len(community)].append(community)
 
-    results = list(resultDict.items())
-    results.sort(key = lambda pair: pair[0])
+    # results = list(resultDict.items())
+    # results.sort(key = lambda pair: pair[0])
 
-    output = open(output_file, "w")
+    # output = open(output_file, "w")
 
-    for result in results:
-        resultList = sorted(result[1])
-        for community in resultList:
-            output.write(community + "\n")
-    output.close()
+    # for result in results:
+    #     resultList = sorted(result[1])
+    #     for community in resultList:
+    #         output.write(community + "\n")
+    # output.close()
 
 
 def map_co_thr(line):
@@ -51,54 +57,41 @@ def map_co_thr(line):
 
 
 def calc_betweenness(uid, graph):
-
-    #BFS
-    queue = [(None,set([]),uid)]
-    shortest_dist = dict([])
-    shortest_num = defaultdict(int)
+    if uid not in graph: return []
+    # BFS
+    queue = [uid]
+    layers = {uid: 0}
+    shortest_paths = defaultdict(int)
     while queue:
-        parent, siblings, cur = queue.pop(0)
-        if parent is None:
-            shortest_dist[cur] = 0
-            shortest_num[cur] += 1
-        elif shortest_dist.setdefault(cur, float('inf')) >= shortest_dist[parent] + 1:
-            shortest_dist[cur] = shortest_dist[parent] + 1
-            shortest_num[cur] += 1
+        cur = queue.pop(0)
+        cur_layer = layers[cur]
+        shortest_paths[cur] += 1
         for child in graph[cur]:
-            if child != parent  and child not in siblings:
-                child_siblings = [node for node in graph[cur] if node not in siblings and child != node]
-                for i, node in enumerate(queue):
-                    if node[2] == child:
-                        child_siblings.append(node[0])
-                        queue[i] = (node[0],set(list(node[1]) + [cur]),node[2])
-                        break
-                queue.append((cur,set(child_siblings),child))
-            
+            if child not in layers:
+                layers[child] = cur_layer + 1
+            if cur_layer < layers[child]:
+                queue.append(child)
+    shortest_paths = dict(shortest_paths)
+
+    # DFS 
+    _, scores = betweenness_recursive(uid, graph, layers, shortest_paths, None)
+    return scores
 
 
-    start_scores = dict({})
-    siblings = set({})
-    parent = None
-    scores = betweenness_recursive(uid, start_scores, graph, siblings, parent)
-    return
-
-
-def betweenness_recursive(cur_node, graph, siblings, parent):
+def betweenness_recursive(cur_node, graph, layers, shortest_paths, parent):
     connected_nodes = graph[cur_node]
-    children = [node for node in connected_nodes if node not in siblings]
-    if parent is not None:
-        children.remove(parent)
+    children = [node for node in connected_nodes if layers[node] > layers[cur_node]]
     if len(children) == 0:
-        return 1, {sorted((parent, cur_node)) : 1}
+        return 1/shortest_paths[cur_node], [((*sorted((parent, cur_node)),) , 1/shortest_paths[cur_node])]
     node_val = 1
-    scores = {}
+    scores = []
     for child in children:
-        val, score = betweenness_recursive(child, graph, set([node for node in children if node != child]), cur_node)
-        node_val += node_val
-        
-
-
-    return
+        val, score = betweenness_recursive(child, graph, layers, shortest_paths, cur_node)
+        node_val += val
+        scores.extend(score)
+    if parent is not None:
+        scores.append(((*sorted((parent, cur_node)),) , node_val/shortest_paths[cur_node]))
+    return node_val / shortest_paths[cur_node], scores
 
 
 if __name__ == '__main__':
