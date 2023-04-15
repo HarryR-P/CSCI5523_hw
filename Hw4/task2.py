@@ -12,14 +12,28 @@ def main(filter_threshold, input_file, output_file, betweenness_output_file, sc 
     matrix_rdd = data_rdd.map(lambda x: (x[1],x[0])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],(*set(x[1]),)))
     graph = matrix_rdd.flatMap(map_co_thr).reduceByKey(lambda a,b: a+b).filter(lambda x: x[1] >= filter_threshold).flatMap(lambda x: [x[0],(x[0][1],x[0][0])])\
         .aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).collectAsMap()
-    betweenness_rdd = data_rdd.map(lambda x: x[0]).distinct().flatMap(lambda x: calc_betweenness(x, graph)).reduceByKey(lambda a,b: a+b).map(lambda x: (x[0],x[1]/2))
-    betweenness = betweenness_rdd.sortBy(lambda x: (-x[1],x[0])).collect()
+    vertexes_rdd = betweenness_rdd = data_rdd.map(lambda x: x[0]).distinct()
+    vertexes = vertexes_rdd.collect()
+    Q = 0
+    i = 0
+    while Q < 0.5:
+        betweenness_rdd = vertexes_rdd.flatMap(lambda x: calc_betweenness(x, graph)).reduceByKey(lambda a,b: a+b).map(lambda x: (x[0],x[1]/2))
+        if i==0:
+            init_betweenness = betweenness_rdd.sortBy(lambda x: (-x[1],x[0])).collect()
+        m = betweenness_rdd.count()
+        max = betweenness_rdd.max(key=lambda x: x[1])
+        graph = betweenness_rdd.filter(lambda x: x[1] < max[1]).flatMap(lambda x: [x[0],(x[0][1],x[0][0])]).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).collectAsMap()
+        communities = find_communities(vertexes,graph)
+        Q = modularity(communities, graph, m)
+        i += 1
+
+    print(Q)
 
 
 
-    with open(betweenness_output_file, 'w') as outfile:
-        for line in betweenness:
-            outfile.write(line + '\n')
+    # with open(betweenness_output_file, 'w') as outfile:
+    #     for line in init_betweenness:
+    #         outfile.write(line + '\n')
 
     # example of identified communities
     # communities = [['23y0Nv9FFWn_3UWudpnFMA'],['3Vd_ATdvvuVVgn_YCpz8fw'], ['0KhRPd66BZGHCtsb9mGh_g', '5fQ9P6kbQM_E0dx8DL6JWA' ]]
@@ -92,6 +106,44 @@ def betweenness_recursive(cur_node, graph, layers, shortest_paths, parent):
     if parent is not None:
         scores.append(((*sorted((parent, cur_node)),) , node_val/shortest_paths[cur_node]))
     return node_val / shortest_paths[cur_node], scores
+
+
+def find_communities(vertexes, graph):
+    visited = []
+    communities = []
+    for vertex in vertexes:
+        if vertex in visited:
+            continue
+        if vertex not in graph:
+            communities.append([vertex])
+            continue
+        visited.append(vertex)
+        queue = [vertex]
+        community = []
+        while queue:
+            node = queue.pop(0)
+            community.append(node)
+            for neighor in graph[node]:
+                if neighor not in visited:
+                    queue.append(neighor)
+                    visited.append(neighor)
+        communities.append(community)
+    return communities
+
+
+def modularity(communities, graph, m):
+    Q = 0
+    for community in communities:
+        if len(community) == 1:
+            continue
+        for n1, n2 in combinations(community, 2):
+            k1 = len(graph[n1])
+            k2 = len(graph[n2])
+            A = 1 if n1 in graph[n2] else 0
+            Q += (A - ((k1 * k2)/(2*m)))
+    Q /= (2*m)
+    return Q
+
 
 
 if __name__ == '__main__':
