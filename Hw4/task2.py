@@ -40,26 +40,26 @@ def main(filter_threshold, input_file, output_file, betweenness_output_file, sc 
     # for i in communities:
     #     print(i)
 
-    """ code for saving the output to file in the correct format """
-    resultDict = {}
-    for community in communities:
-        community = list(map(lambda userId: "'" + userId + "'", sorted(community)))
-        community = ", ".join(community)
+    # """ code for saving the output to file in the correct format """
+    # resultDict = {}
+    # for community in communities:
+    #     community = list(map(lambda userId: "'" + userId + "'", sorted(community)))
+    #     community = ", ".join(community)
 
-        if len(community) not in resultDict:
-            resultDict[len(community)] = []
-        resultDict[len(community)].append(community)
+    #     if len(community) not in resultDict:
+    #         resultDict[len(community)] = []
+    #     resultDict[len(community)].append(community)
 
-    results = list(resultDict.items())
-    results.sort(key = lambda pair: pair[0])
+    # results = list(resultDict.items())
+    # results.sort(key = lambda pair: pair[0])
 
-    output = open(output_file, "w")
+    # output = open(output_file, "w")
 
-    for result in results:
-        resultList = sorted(result[1])
-        for community in resultList:
-            output.write(community + "\n")
-    output.close()
+    # for result in results:
+    #     resultList = sorted(result[1])
+    #     for community in resultList:
+    #         output.write(community + "\n")
+    # output.close()
 
 
 def map_co_thr(line):
