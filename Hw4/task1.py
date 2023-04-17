@@ -23,8 +23,8 @@ def main(filter_threshold, input_file, output_file, sc : pyspark.SparkContext):
     # example of identified communities
     #communities = [['23y0Nv9FFWn_3UWudpnFMA'],['3Vd_ATdvvuVVgn_YCpz8fw'], ['0KhRPd66BZGHCtsb9mGh_g', '5fQ9P6kbQM_E0dx8DL6JWA' ]]
 
-    for i in communities:
-        print(i)
+    # for i in communities:
+    #     print(i)
 
     """ code for saving the output to file in the correct format """
     resultDict = {}

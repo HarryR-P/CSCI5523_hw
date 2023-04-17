@@ -7,27 +7,25 @@ from collections import defaultdict
 
 def main():
     uid = 'e'
-    graph = {'e':['d','f'], 'd':['e','f','b','g'], 'f':['e','d','g'], 'g':['d','f'], 'b':['d','a','c'], 'a':['b','c'], 'c':['b','a']}
-    queue = [(None,[],uid)]
-    visited = [uid]
-    shortest_dist = dict([])
-    shortest_num = defaultdict(int)
-    while queue:
-        parent, siblings, cur = queue.pop(0)
-        if parent is None:
-            shortest_dist[cur] = 0
-            shortest_num[cur] += 1
-        elif shortest_dist.setdefault(cur, float('inf')) >= shortest_dist[parent] + 1:
-            shortest_dist[cur] = shortest_dist[parent] + 1
-            shortest_num[cur] += 1
-        for child in graph[cur]:
-            if child != parent  and child not in siblings:
-                queue.append((cur,set([node for node in graph[cur] if node not in siblings]),child))
-            elif child != parent and shortest_dist.setdefault(child, float('inf')) == shortest_dist[cur] + 1:
-                shortest_num[child] += 1
+    t = (1,2)
+    print(t + '\n')
     
-    print(dict(shortest_num))
     return
+
+def betweenness_recursive(cur_node, graph, layers, shortest_paths, parent):
+    connected_nodes = graph[cur_node]
+    children = [node for node in connected_nodes if layers[node] > layers[cur_node]]
+    if len(children) == 0:
+        return 1/shortest_paths[cur_node], [((*sorted((parent, cur_node)),) , 1/shortest_paths[cur_node])]
+    node_val = 1
+    scores = []
+    for child in children:
+        val, score = betweenness_recursive(child, graph, layers, shortest_paths, cur_node)
+        node_val += val
+        scores.extend(score)
+    if parent is not None:
+        scores.append(((*sorted((parent, cur_node)),) , node_val/shortest_paths[cur_node]))
+    return node_val / shortest_paths[cur_node], scores
 
 if __name__ == '__main__':
     main()
