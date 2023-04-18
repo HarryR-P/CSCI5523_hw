@@ -13,18 +13,15 @@ def main(filter_threshold, input_file, output_file, sc : pyspark.SparkContext):
     data_rdd = spark.read.option('header',True).csv(input_file).rdd
     matrix_rdd = data_rdd.map(lambda x: (x[1],x[0])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],(*set(x[1]),)))
     pairs_rdd = matrix_rdd.flatMap(map_co_thr).reduceByKey(lambda a,b: a+b).filter(lambda x: x[1] >= filter_threshold).map(lambda x: x[0])
+    vertexes_rdd = pairs_rdd.flatMap(lambda x: [(x[0],),(x[1],)]).distinct()
     edges_df = pairs_rdd.toDF(['src','dst'])
-    vertex_df = data_rdd.map(lambda x: (x[0],)).distinct().toDF(['id'])
+    vertex_df = vertexes_rdd.toDF(['id'])
     g = GraphFrame(vertex_df, edges_df)
     result = g.labelPropagation(maxIter=5).rdd
     communities = result.map(lambda x: (x[1],x[0])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x: x[1]).collect()
 
-
-    # example of identified communities
-    #communities = [['23y0Nv9FFWn_3UWudpnFMA'],['3Vd_ATdvvuVVgn_YCpz8fw'], ['0KhRPd66BZGHCtsb9mGh_g', '5fQ9P6kbQM_E0dx8DL6JWA' ]]
-
-    # for i in communities:
-    #     print(i)
+    for i in communities:
+        print(i)
 
     """ code for saving the output to file in the correct format """
     resultDict = {}
