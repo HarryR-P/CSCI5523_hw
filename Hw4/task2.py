@@ -2,38 +2,37 @@ import argparse
 import json
 import time
 import pyspark
-from itertools import combinations
+from itertools import combinations, permutations
 from collections import defaultdict
 
 
 def main(filter_threshold, input_file, output_file, betweenness_output_file, sc : pyspark.SparkContext):
 
-    data_rdd = sc.textFile(input_file).filter(lambda x: x[0] != 'user_id,business_id').map(lambda x: (*(x.split(',')),))
+    data_rdd = sc.textFile(input_file).filter(lambda x: x != 'user_id,business_id').map(lambda x: (*(x.split(',')),))
     matrix_rdd = data_rdd.map(lambda x: (x[1],x[0])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],(*set(x[1]),)))
-    graph = matrix_rdd.flatMap(map_co_thr).reduceByKey(lambda a,b: a+b).filter(lambda x: x[1] >= filter_threshold).flatMap(lambda x: [x[0],(x[0][1],x[0][0])])\
-        .aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).collectAsMap()
+    edges_rdd = matrix_rdd.flatMap(map_co_thr).reduceByKey(lambda a,b: a+b).filter(lambda x: x[1] >= filter_threshold)
+    m = edges_rdd.count()
+    null_graph = edges_rdd.flatMap(lambda x: [x[0],(x[0][1],x[0][0])]).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).collectAsMap()
     vertexes_rdd = betweenness_rdd = data_rdd.map(lambda x: x[0]).distinct()
     vertexes = vertexes_rdd.collect()
     Q = 0
     i = 0
-    while Q < 0.5:
+    graph = null_graph
+    while Q < 0.30:
         betweenness_rdd = vertexes_rdd.flatMap(lambda x: calc_betweenness(x, graph)).reduceByKey(lambda a,b: a+b).map(lambda x: (x[0],x[1]/2))
         if i==0:
             init_betweenness = betweenness_rdd.sortBy(lambda x: (-x[1],x[0])).collect()
-        m = betweenness_rdd.count()
         max = betweenness_rdd.max(key=lambda x: x[1])
-        graph = betweenness_rdd.filter(lambda x: x[1] < max[1]).flatMap(lambda x: [x[0],(x[0][1],x[0][0])]).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).collectAsMap()
+        graph = betweenness_rdd.filter(lambda x: x != max).flatMap(lambda x: [x[0],(x[0][1],x[0][0])]).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).collectAsMap()
         communities = find_communities(vertexes,graph)
-        Q = modularity(communities, graph, m)
+        Q = modularity(communities, null_graph, m)
         i += 1
-
-    print(Q)
-
+        print(Q)
 
 
-    # with open(betweenness_output_file, 'w') as outfile:
-    #     for line in init_betweenness:
-    #         outfile.write(line + '\n')
+    with open(betweenness_output_file, "w") as outfile:
+        for line in init_betweenness:
+            outfile.write(f'{line[0]}, {line[1]}\n')
 
     # example of identified communities
     # communities = [['23y0Nv9FFWn_3UWudpnFMA'],['3Vd_ATdvvuVVgn_YCpz8fw'], ['0KhRPd66BZGHCtsb9mGh_g', '5fQ9P6kbQM_E0dx8DL6JWA' ]]
@@ -41,33 +40,33 @@ def main(filter_threshold, input_file, output_file, betweenness_output_file, sc 
     # for i in communities:
     #     print(i)
 
-    # """ code for saving the output to file in the correct format """
-    # resultDict = {}
-    # for community in communities:
-    #     community = list(map(lambda userId: "'" + userId + "'", sorted(community)))
-    #     community = ", ".join(community)
+    """ code for saving the output to file in the correct format """
+    resultDict = {}
+    for community in communities:
+        community = list(map(lambda userId: "'" + userId + "'", sorted(community)))
+        community = ", ".join(community)
 
-    #     if len(community) not in resultDict:
-    #         resultDict[len(community)] = []
-    #     resultDict[len(community)].append(community)
+        if len(community) not in resultDict:
+            resultDict[len(community)] = []
+        resultDict[len(community)].append(community)
 
-    # results = list(resultDict.items())
-    # results.sort(key = lambda pair: pair[0])
+    results = list(resultDict.items())
+    results.sort(key = lambda pair: pair[0])
 
-    # output = open(output_file, "w")
+    output = open(output_file, "w")
 
-    # for result in results:
-    #     resultList = sorted(result[1])
-    #     for community in resultList:
-    #         output.write(community + "\n")
-    # output.close()
+    for result in results:
+        resultList = sorted(result[1])
+        for community in resultList:
+            output.write(community + "\n")
+    output.close()
 
 
 def map_co_thr(line):
     ratings_list = line[1]
     if len(ratings_list) < 2: return []
     pairs = combinations(ratings_list,2)
-    return [(tuple(sorted(pair)),1) for pair in pairs]
+    return [(tuple(sorted(pair)),1) for pair in  pairs]
 
 
 def calc_betweenness(uid, graph):
@@ -131,19 +130,18 @@ def find_communities(vertexes, graph):
     return communities
 
 
-def modularity(communities, graph, m):
+def modularity(communities, null_graph, m):
     Q = 0
     for community in communities:
         if len(community) == 1:
             continue
-        for n1, n2 in combinations(community, 2):
-            k1 = len(graph[n1])
-            k2 = len(graph[n2])
-            A = 1 if n1 in graph[n2] else 0
+        for n1, n2 in permutations(community, 2):
+            k1 = len(null_graph[n1])
+            k2 = len(null_graph[n2])
+            A = 1 if n1 in null_graph[n2] else 0
             Q += (A - ((k1 * k2)/(2*m)))
-    Q /= (2*m)
+    Q = Q * (1/(2*m))
     return Q
-
 
 
 if __name__ == '__main__':
@@ -164,6 +162,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     main(args.filter_threshold, args.input_file, args.community_output_file, args.betweenness_output_file, sc)
+    print(f'Runtime: {time.time() - start_time}')
     sc.stop()
 
 
