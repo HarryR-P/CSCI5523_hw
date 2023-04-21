@@ -6,8 +6,8 @@ from itertools import combinations
 from collections import defaultdict
 
 def main():
-    graph = {'g':['h','e','f'],'h':['g','e'],'e':['g','h','f','d'],'f':['g','e'],'d':['e','a','c'],'a':['d','c','b'],'c':['d','a','b'],'b':['a','c']}
-    uid = 'h'
+    graph = {'e':['d','f'],'d':['e','f','g','b'],'f':['e','d','g'],'g':['d','f','h'],'b':['d','a','c'],'a':['b','c'],'c':['b','a','i'],'h':['g','i'],'i':['h','c']}
+    uid = 'e'
     if uid not in graph: return []
     # BFS
     queue = [uid]
@@ -25,6 +25,7 @@ def main():
     shortest_paths = dict(shortest_paths)
 
     _, scores = betweenness_recursive(uid, graph, layers, shortest_paths, None)
+    scores = [*set(scores)]
 
     print(shortest_paths)
     print(scores)
@@ -32,10 +33,10 @@ def main():
     return
 
 def betweenness_recursive(cur_node, graph, layers, shortest_paths, parent):
-    connected_nodes = graph[cur_node]
-    children = [node for node in connected_nodes if layers[node] > layers[cur_node]]
+    children = [node for node in graph[cur_node] if layers[node] > layers[cur_node]]
     if len(children) == 0:
-        return 1/shortest_paths[cur_node], [((*sorted((parent, cur_node)),) , 1/shortest_paths[cur_node])]
+        val = shortest_paths[parent]/shortest_paths[cur_node]
+        return val, [((*sorted((parent, cur_node)),) , val)]
     node_val = 1
     scores = []
     for child in children:
@@ -43,11 +44,11 @@ def betweenness_recursive(cur_node, graph, layers, shortest_paths, parent):
         node_val += val
         scores.extend(score)
     if parent is not None:
-        score = node_val * (shortest_paths[parent]/shortest_paths[cur_node])
-        scores.append(((*sorted((parent, cur_node)),) , score))
+        val = node_val * (shortest_paths[parent]/shortest_paths[cur_node])
+        scores.append(((*sorted((parent, cur_node)),) , val))
     else:
-        score = 0
-    return score, scores
+        val = 0
+    return val, scores
 
 if __name__ == '__main__':
     main()

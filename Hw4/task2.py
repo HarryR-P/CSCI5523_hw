@@ -2,7 +2,7 @@ import argparse
 import json
 import time
 import pyspark
-from itertools import combinations, permutations
+from itertools import combinations
 from collections import defaultdict
 
 
@@ -12,24 +12,30 @@ def main(filter_threshold, input_file, output_file, betweenness_output_file, sc 
     matrix_rdd = data_rdd.map(lambda x: (x[1],x[0])).aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).map(lambda x:(x[0],(*set(x[1]),)))
     edges_rdd = matrix_rdd.flatMap(map_co_thr).reduceByKey(lambda a,b: a+b).filter(lambda x: x[1] >= filter_threshold)
     m = edges_rdd.count()
-    null_graph = edges_rdd.flatMap(lambda x: [x[0],(x[0][1],x[0][0])]).distinct().aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).collectAsMap()
+    graph = edges_rdd.flatMap(lambda x: [x[0],(x[0][1],x[0][0])]).distinct().aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).collectAsMap()
     vertexes_rdd = edges_rdd.flatMap(lambda x: [x[0][0],x[0][1]]).distinct()
     vertexes = vertexes_rdd.collect()
-    Q = 0
-    i = 0
-    graph = null_graph
-    while Q < 0.7:
-        betweenness_rdd = vertexes_rdd.flatMap(lambda x: calc_betweenness(x, graph)).reduceByKey(lambda a,b: a+b).map(lambda x: (x[0],x[1]/2))
-        if i==0:
-            init_betweenness = betweenness_rdd.sortBy(lambda x: (-x[1],x[0])).collect()
+    adj_matrix = make_adj_matrix(graph,vertexes)
+    betweenness_rdd = vertexes_rdd.flatMap(lambda x: calc_betweenness(x, graph)).reduceByKey(lambda a,b: a+b).map(lambda x: (x[0],x[1]/2))
+    communities = find_communities(vertexes,graph)
+    Q = modularity(communities, graph, adj_matrix, m)
+    max_Q = Q
+    max_comm = communities
+    init_betweenness = betweenness_rdd.sortBy(lambda x: (-x[1],x[0][0])).collect()
+    count = betweenness_rdd.count()
+    while count > 0:
         max = betweenness_rdd.max(key=lambda x: x[1])
         graph = betweenness_rdd.filter(lambda x: x != max).flatMap(lambda x: [x[0],(x[0][1],x[0][0])]).distinct().aggregateByKey([], lambda a,b: a + [b], lambda a,b: a + b).collectAsMap()
         communities = find_communities(vertexes,graph)
-        Q = modularity(communities, graph, null_graph, m)
-        i += 1
-        print(Q)
+        Q = modularity(communities, graph, adj_matrix, m)
+        if Q > max_Q:
+            max_Q = Q
+            print(max_Q)
+            max_comm = communities
+        betweenness_rdd = vertexes_rdd.flatMap(lambda x: calc_betweenness(x, graph)).reduceByKey(lambda a,b: a+b).map(lambda x: (x[0],x[1]/2))
+        count = betweenness_rdd.count()
 
-
+    communities = max_comm
     with open(betweenness_output_file, "w") as outfile:
         for line in init_betweenness:
             outfile.write(f'{line[0]}, {line[1]}\n')
@@ -85,14 +91,20 @@ def calc_betweenness(uid, graph):
 
     # DFS 
     _, scores = betweenness_recursive(uid, graph, layers, shortest_paths, None)
-    return scores
+
+    return [*set(scores)]
 
 
 def betweenness_recursive(cur_node, graph, layers, shortest_paths, parent):
-    connected_nodes = graph[cur_node]
-    children = [node for node in connected_nodes if layers[node] > layers[cur_node]]
+    children = [node for node in graph[cur_node] if layers[node] > layers[cur_node]]
     if len(children) == 0:
-        return 1/shortest_paths[cur_node], [((*sorted((parent, cur_node)),) , 1/shortest_paths[cur_node])]
+        if parent is not None:
+            val = shortest_paths[parent]/shortest_paths[cur_node]
+        else:
+            print(cur_node)
+            print(graph)
+            val = 0
+        return val, [((*sorted((parent, cur_node)),) , val)]
     node_val = 1
     scores = []
     for child in children:
@@ -100,11 +112,12 @@ def betweenness_recursive(cur_node, graph, layers, shortest_paths, parent):
         node_val += val
         scores.extend(score)
     if parent is not None:
-        score = node_val * (shortest_paths[parent]/shortest_paths[cur_node])
-        scores.append(((*sorted((parent, cur_node)),) , score))
+        val = node_val * (shortest_paths[parent]/shortest_paths[cur_node])
+        scores.append(((*sorted((parent, cur_node)),) , val))
     else:
-        score = 0
-    return score, scores
+        val = 0
+    return val, scores
+
 
 def find_communities(vertexes, graph):
     visited = []
@@ -129,16 +142,30 @@ def find_communities(vertexes, graph):
     return communities
 
 
-def modularity(communities, graph, null_graph, m):
+def make_adj_matrix(graph, vertexes):
+    matrix = dict([])
+    for v1 in vertexes:
+        row = dict([])
+        for v2 in vertexes:
+            row[v2] = 1 if v1 in graph[v2] else 0
+        matrix[v1] = row
+    return matrix
+
+
+def modularity(communities, graph : dict, adj_matrix, m):
     Q = 0
     for community in communities:
-        if len(community) == 1:
-            continue
-        for n1, n2 in permutations(community, 2):
-            k1 = len(graph[n1])
-            k2 = len(graph[n2])
-            A = 1 if n1 in null_graph[n2] else 0
-            Q += (A - ((k1 * k2)/(2*m)))
+        for n1 in community:
+            for n2 in community:
+                if n1 in graph:
+                    k1 = len(graph[n1])
+                else:
+                    k1 = 0
+                if n2 in graph:
+                    k2 = len(graph[n2])
+                else:
+                    k2 = 0
+                Q += (adj_matrix[n1][n2] - ((k1 * k2)/(2*m)))
     Q = Q * (1/(2*m))
     return Q
 
