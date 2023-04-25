@@ -5,15 +5,15 @@ import time
 import csv
 import numpy as np
 import math
-import pandas as pd
-from sklearn.cluster import KMeans
 from itertools import combinations
 
 def main(input_path, n_cluster, out_file1, out_file2):
     dir_list = os.listdir(input_path)
     kmeans_path = dir_list.pop(0)
-    data = pd.read_csv(os.path.join(input_path, kmeans_path), header=None)
-    print(data[1:10].head())
+    with open(os.path.join(input_path,kmeans_path)) as f:
+        data = {int(line[0]) : [float(point) for point in line[1:]] for line in csv.reader(f,delimiter=',')}
+    centroids = kmeans(data, n_cluster)
+    print(centroids)
 
 
     return
