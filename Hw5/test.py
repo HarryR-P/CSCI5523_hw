@@ -9,10 +9,10 @@ import pandas as pd
 from itertools import combinations
 
 def main():
-    columns = ['id'] + [f'x{i}' for i in range(10)]
-    data_df = pd.read_csv("C:\\Users\\harri\\Documents\\CSCI_5523_local\\CSCI5523_hw\\data\\test1\\data0.txt", names=columns).set_index('id')
-    clusters = h_cluster(data_df.head(100))
-    print(clusters)
+    # columns = ['id'] + [f'x{i}' for i in range(10)]
+    # data_df = pd.read_csv("C:\\Users\\harri\\Documents\\CSCI_5523_local\\CSCI5523_hw\\data\\test1\\data0.txt", names=columns).set_index('id')
+    l = np.array([-2,2,2,2,2])
+    print(np.square(l))
     
     return
 

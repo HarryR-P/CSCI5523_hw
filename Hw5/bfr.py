@@ -13,9 +13,24 @@ def main(input_path, n_cluster, out_file1, out_file2):
     kmeans_path = dir_list.pop(0)
     columns = ['id'] + [f'x{i}' for i in range(10)]
     data_df = pd.read_csv(os.path.join(input_path, kmeans_path), names=columns).set_index('id')
-    points = data_df.drop(columns=['id']).to_numpy()
+    points = data_df.to_numpy()
     kmeans = KMeans(n_clusters=n_cluster, n_init='auto').fit(points)
-    centroids = kmeans.cluster_centers_
+    labels = kmeans.labels_
+    return_dict = dict([])
+    DS = [{'N':0,'SUM':[0 for _ in data_df.iloc[0]],'SUMSQ':[0 for _ in data_df.iloc[0]]} for _ in range(n_cluster)]
+    CS = []
+    RS = []
+    for idx, label in zip(data_df.index.tolist(),labels):
+        return_dict[idx] = label
+        DS[label]['N'] += 1
+        DS[label]['SUM'] = np.sum([DS[label]['SUM'],data_df.iloc[idx].to_numpy()],axis=0)
+        DS[label]['SUMSQ'] = np.sum([DS[label]['SUMSQ'],np.square(data_df.iloc[idx].to_numpy())],axis=0)
+
+    for test_name in dir_list:
+        columns = ['id'] + [f'x{i}' for i in range(10)]
+        data_df = pd.read_csv(os.path.join(input_path, test_name), names=columns).set_index('id')
+
+
     
     return
 
@@ -62,11 +77,30 @@ def flatten(nestedlist):
     return nestedlist[:1] + flatten(nestedlist[1:])
 
 
-def seperate_clusters(clusters, data, n_cluster):
-    return_dict = {i : [] for i in range(n_cluster)}
-    for point_idx, centroid_idx in clusters.items():
-        return_dict[centroid_idx].append(data[point_idx])
-    return return_dict
+def calc_DS_points(data_df : pd.DataFrame, DS):
+    point_idxs = data_df.index.tolist()
+    dists = {idx: [] for idx in point_idxs}
+    for cluster in DS:
+        sd = np.sqrt(cluster['SUMSQ'] / cluster['N'] - np.square(cluster['SUM'] / cluster['N']))
+        centroid = cluster['SUM'] / cluster['N']
+        for idx in point_idxs:
+            dist = mahalanobis_dist(data_df.iloc[idx],centroid,sd)
+            dists[idx].append(dist)
+    for k, d_list in dists.items():
+        min_val = min(d_list)
+        min_idx = np.argmin(d_list)
+        if min_val > 2:
+            del dists[k]
+        else:
+            dists[k] = min_idx
+    return dists
+
+
+def mahalanobis_dist(p1, p2, sd_list):
+    dist = 0
+    for d1, d2, sd in zip(p1, p2, sd_list):
+        dist += ((d1 - d2) / sd)**2
+    return np.sqrt(dist).item()
 
 
 if __name__ == '__main__':
