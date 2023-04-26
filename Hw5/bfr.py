@@ -2,7 +2,6 @@ import os
 import argparse
 import json
 import time
-import csv
 import numpy as np
 import math
 import pandas as pd
@@ -12,54 +11,33 @@ from itertools import combinations
 def main(input_path, n_cluster, out_file1, out_file2):
     dir_list = os.listdir(input_path)
     kmeans_path = dir_list.pop(0)
-    data = pd.read_csv(os.path.join(input_path, kmeans_path), header=None)
-    print(data[1:10].head())
-
-
+    columns = ['id'] + [f'x{i}' for i in range(10)]
+    data_df = pd.read_csv(os.path.join(input_path, kmeans_path), names=columns).set_index('id')
+    points = data_df.drop(columns=['id']).to_numpy()
+    kmeans = KMeans(n_clusters=n_cluster, n_init='auto').fit(points)
+    centroids = kmeans.cluster_centers_
+    
     return
 
 
-def kmeans(data, n_cluster, max_itter = 100):
-    k_points = np.random.choice(list(data.keys()),size=n_cluster,replace=False)
-    centroids = np.array([data[idx] for idx in k_points])
-    prev_centroids = np.zeros(centroids.shape)
-    for _ in range(max_itter):
-        clusters = {i : [] for i in data.keys()}
-        for centroid in centroids:
-            for point_idx, point in data.items():
-                distance = 0
-                for point_dim, centroid_dim in zip(point,centroid):
-                    distance += (point_dim - centroid_dim)**2
-                distance = math.sqrt(distance)
-                clusters[point_idx].append(distance)
-        for k, dist_list in clusters.items():
-            cluster = np.argmin(dist_list)
-            clusters[k] = cluster.item()
-
-        cluster_dict = seperate_clusters(clusters, data, n_cluster)
-        prev_centroids = centroids
-        centroids = np.array([np.average(cluster,axis=0) for cluster in cluster_dict.values()])
-        if np.any(np.abs(centroids - prev_centroids) > 0.01*np.ones(centroids.shape)):
+def h_cluster(data_df : pd.DataFrame, max_dist = 20):
+    points = data_df.to_dict(orient='list')
+    while len(points) > 1:
+        min_dist = float('inf')
+        min_points = -1
+        for p1, p2 in combinations(points.keys(),2):
+            dist = calc_dist(points[p1],points[p2])
+            if min_dist > dist:
+                min_dist = dist
+                min_points = (*sorted(p1,p2),)
+        if min_dist > max_dist:
             break
-    return centroids
+        centroid = list(np.average([points[min_points[0]],points[min_points[1]]],axis=0))
+        points[min_points] = centroid
+        del points[min_points[0]]
+        del points[min_points[1]]
 
-
-def init_kmeans(data, n_cluster):
-    centroids = []
-    first_point = np.random.randint(0, len(data))
-    centroids.append(data[first_point])
-    dists = dict([])
-    while len(centroids) < n_cluster:
-        for point_idx, point in data.items():
-            row = []
-            for centroid in centroids:
-                dist = calc_dist(point, centroid)
-                row.append(dist)
-            dists[point_idx] = row
-        dists = np.min(dists, axis=1)
-        point = np.max(dists)
-        centroids.append(point)
-                
+    return points.keys()
 
 
 def calc_dist(p1, p2):
@@ -67,10 +45,6 @@ def calc_dist(p1, p2):
     for d1, d2 in zip(p1,p2):
         dist += (d1 - d2)**2
     return np.sqrt(dist).item()
-
-            
-
-
 
 
 def seperate_clusters(clusters, data, n_cluster):
