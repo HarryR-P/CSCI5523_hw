@@ -6,40 +6,56 @@ import csv
 import numpy as np
 import math
 import pandas as pd
+import heapq
 from itertools import combinations
 
 def main():
-    # columns = ['id'] + [f'x{i}' for i in range(10)]
-    # data_df = pd.read_csv("C:\\Users\\harri\\Documents\\CSCI_5523_local\\CSCI5523_hw\\data\\test1\\data0.txt", names=columns).set_index('id')
-    l = np.array([-2,2,2,2,2])
-    print(np.square(l))
+    columns = ['id'] + [f'x{i}' for i in range(50)]
+    data_df = pd.read_csv("C:\\Users\\harri\\Documents\\CSCI_5523_local\\CSCI5523_hw\\data\\test2\\data0.txt", names=columns).set_index('id')
+    print(h_cluster(data_df.head(1000)))
+    
     
     return
 
 
-def h_cluster(data_df : pd.DataFrame, max_dist = 20):
+def h_cluster(data_df : pd.DataFrame, max_dist = 500, max_itter = 500):
     points_df = data_df.copy(deep=True)
     point2id = {(i,):i for i in points_df.index.tolist()}
     max_idx = len(point2id) - 1
-    while len(point2id) > 1:
-        min_dist = float('inf')
-        min_points = -1
-        for p1, p2 in combinations(point2id.keys(),2):
-            dist = calc_dist(points_df.iloc[point2id[p1]],points_df.iloc[point2id[p2]])
-            if min_dist > dist:
-                min_dist = dist
-                min_points = (p1,p2)
-        if min_dist > max_dist:
+    dist_queue = []
+    for p1, p2 in combinations(point2id.keys(),2):
+        dist = calc_dist(points_df.loc[point2id[p1]],points_df.loc[point2id[p2]])
+        heapq.heappush(dist_queue, (dist,p1,p2))
+    for _ in range(max_itter):
+        dist, p1, p2 = heapq.heappop(dist_queue)
+        if p1 == '-':
+            continue
+        if dist > max_dist:
             break
-        centroid = list(np.average([points_df.iloc[point2id[min_points[0]]].to_numpy(),points_df.iloc[point2id[min_points[1]]].to_numpy()],axis=0))
-        
-        row = pd.Series({'id':max_idx + 1,'x0':centroid[0],'x1':centroid[1],'x2':centroid[2],'x3':centroid[3],'x4':centroid[4],'x5':centroid[5],'x6':centroid[6],'x7':centroid[7],'x8':centroid[8],
-                         'x9':centroid[9]}).to_frame().T.set_index('id')
+
+        for i, (cur_dist, cur_p1, cur_p2) in enumerate(dist_queue):
+            if p1 == cur_p1 or p1 == cur_p2:
+                dist_queue[i] = (cur_dist, '-', '-')
+            elif p2 == cur_p1 or p2 == cur_p2:
+                dist_queue[i] = (cur_dist, '-', '-')
+
+        cluster_idx = (p1,p2)
+        centroid = list(np.average([points_df.loc[point2id[p1]].to_numpy(),points_df.loc[point2id[p2]].to_numpy()],axis=0))
+        columns = [f'x{i}' for i in range(points_df.shape[1]-1)]
+        series_dict = {'id': max_idx + 1}
+        for dim, name in zip(centroid,columns):
+            series_dict[name] = dim
+        row = pd.Series(series_dict).to_frame().T.set_index('id')
         points_df = pd.concat([points_df, row])
-        point2id[min_points] = max_idx + 1
-        for point in min_points:
-            del point2id[point]
+        point2id[cluster_idx] = max_idx + 1
         max_idx += 1
+        del point2id[p1]
+        del point2id[p2]
+        for point in point2id.keys():
+            if point == cluster_idx:
+                continue
+            dist = calc_dist(points_df.loc[point2id[point]],points_df.loc[point2id[cluster_idx]])
+            heapq.heappush(dist_queue, (dist,point,cluster_idx))
 
     return [flatten(cluster) for cluster in point2id.keys()]
 
@@ -57,6 +73,13 @@ def flatten(nestedlist):
     if isinstance(nestedlist[0], tuple):
         return flatten(*nestedlist[:1]) + flatten(nestedlist[1:])
     return nestedlist[:1] + flatten(nestedlist[1:])
+
+
+def mahalanobis_dist(p1, p2, sd_list):
+    dist = 0
+    for d1, d2, sd in zip(p1, p2, sd_list):
+        dist += ((d1 - d2) / sd)**2
+    return np.sqrt(dist).item()
 
 
 if __name__ == '__main__':
