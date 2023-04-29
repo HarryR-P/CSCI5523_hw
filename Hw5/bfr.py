@@ -146,14 +146,6 @@ def calc_dist(p1, p2):
     return np.sqrt(dist).item()
 
 
-def flatten(nestedlist):
-    if not(bool(nestedlist)):
-        return nestedlist
-    if isinstance(nestedlist[0], tuple):
-        return flatten(*nestedlist[:1]) + flatten(nestedlist[1:])
-    return nestedlist[:1] + flatten(nestedlist[1:])
-
-
 def calc_DS_points(data_df : pd.DataFrame, DS, max_dist=4):
     point_idxs = data_df.index.tolist()
     dists = {idx: [] for idx in point_idxs}
@@ -220,12 +212,8 @@ def merge_CS(CS, dims, max_itter=500, max_dist = 3):
 def mahalanobis_dist(p1, p2, sd_list):
     dist = 0
     for d1, d2, sd in zip(p1, p2, sd_list):
-        if sd == 0:
-            sd_list
-        dist += ((d1 - d2) / sd)**2
+        dist += ((d1 - d2) / (sd + 0.001))**2
     dist = np.sqrt(dist).item()
-    if type(dist) != int:
-        dist = 100
     return dist
 
 
