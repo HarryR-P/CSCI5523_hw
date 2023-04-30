@@ -10,9 +10,9 @@ import heapq
 from itertools import combinations
 
 def main():
-    #data_df = pd.read_csv("C:\\Users\\harri\\Documents\\CSCI_5523_local\\CSCI5523_hw\\data\\test2\\data0.txt", header=None).set_index(0)
-    l = [1,1]
-    print(type(1)==int)
+    DS = [{'N':5, 'SUM':np.array([2,2,2,2,2]), 'SUMSQ':np.array([10,10,10,10,10])},{'N':10, 'SUM':np.array([2,2,2,2,2]), 'SUMSQ':np.array([10,10,10,10,10])}]
+    CS = [({'N':5, 'SUM':np.array([2,2,2,2,2]), 'SUMSQ':np.array([10,10,10,10,10])}, [1,2,3,4,5])]
+    print([1,2,3] + [4,5,6])
     
     
     return
@@ -37,6 +37,28 @@ def mahalanobis_dist(p1, p2, sd_list):
     for d1, d2, sd in zip(p1, p2, sd_list):
         dist += ((d1 - d2) / sd)**2
     return np.sqrt(dist).item()
+
+
+def merge_DS_CS(DS, CS, dims, max_dist = 4):
+    dists = dict([])
+    for ds_cluster in DS:
+        ds_centroid = ds_cluster['SUM'] / ds_cluster['N']
+        ds_std = np.sqrt((ds_cluster['SUMSQ'] / ds_cluster['N']) - np.square(ds_cluster['SUM'] / ds_cluster['N']))
+        for cs_cluster, points in CS:
+            cs_centroid = cs_cluster['SUM'] / cs_cluster['N']
+            dist = mahalanobis_dist(cs_centroid, ds_centroid, ds_std)
+            for point in points:
+                if point not in dists:
+                    dists[point] = []
+                dists[point].append(dist)
+    for point, dist_list in dists.items():
+        min_val = min(dist_list)
+        min_idx = np.argmin(dist_list)
+        if min_val > max_dist*math.sqrt(dims):
+            dists[point] = -1
+        else:
+            dists[point] = min_idx
+    return dists
 
 
 if __name__ == '__main__':
