@@ -21,7 +21,7 @@ def main(input_path, n_cluster, out_file1, out_file2):
     intermediate_df = pd.DataFrame(columns=['round_id','nof_cluster_discard','nof_point_discard','nof_cluster_compression','nof_point_compression','nof_point_retained'])
     points_df = data_df.sample(frac=0.8)
     points_idx = points_df.index.tolist()
-    kmeans = KMeans(n_clusters=3*n_cluster, n_init='auto').fit(points_df.to_numpy())
+    kmeans = KMeans(n_clusters=int(2.5*n_cluster), n_init='auto').fit(points_df.to_numpy())
     return_dict = dict([])
     DS = []
     CS = []
@@ -87,23 +87,27 @@ def main(input_path, n_cluster, out_file1, out_file2):
     for test_name in dir_list:
         print(f'Round: {round_id}')
         data_df = pd.read_csv(os.path.join(input_path, test_name), names=columns).set_index('id')
-        unlabled_list ,ds_points = calc_set_points(data_df, DS)
+        ds_points = calc_set_points(data_df, DS)
+        unlabled_list = []
         for idx, label in ds_points.items():
-            return_dict[str(idx)] = int(label)
-            DS[label]['N'] += 1
-            DS[label]['SUM'] = np.sum([DS[label]['SUM'],data_df.loc[idx].to_numpy()],axis=0)
-            DS[label]['SUMSQ'] = np.sum([DS[label]['SUMSQ'],np.square(data_df.loc[idx].to_numpy())],axis=0)
+            if label == -1:
+                unlabled_list.append(idx)
+            else:
+                return_dict[str(idx)] = int(label)
+                DS[label]['N'] += 1
+                DS[label]['SUM'] = np.sum([DS[label]['SUM'],data_df.loc[idx].to_numpy()],axis=0)
+                DS[label]['SUMSQ'] = np.sum([DS[label]['SUMSQ'],np.square(data_df.loc[idx].to_numpy())],axis=0)
         cluster_df = data_df.filter(items=unlabled_list, axis=0)
         
-        unlabled_list ,cs_points = calc_set_points(cluster_df, [cluster for cluster,points in CS])
-
+        cs_points = calc_set_points(cluster_df, [cluster for cluster,points in CS])
         for idx, label in cs_points.items():
-            CS[label][1].append(str(idx))
-            CS[label][0]['N'] += 1
-            CS[label][0]['SUM'] = np.sum([CS[label][0]['SUM'],cluster_df.loc[idx].to_numpy()],axis=0)
-            CS[label][0]['SUMSQ'] = np.sum([CS[label][0]['SUMSQ'],np.square(cluster_df.loc[idx].to_numpy())],axis=0)
-        for idx in unlabled_list:
-            RS.append([idx] + cluster_df.loc[idx].values.tolist())
+            if label == -1:
+                RS.append([idx] + cluster_df.loc[idx].values.tolist())
+            else:
+                CS[label][1].append(str(idx))
+                CS[label][0]['N'] += 1
+                CS[label][0]['SUM'] = np.sum([CS[label][0]['SUM'],cluster_df.loc[idx].to_numpy()],axis=0)
+                CS[label][0]['SUMSQ'] = np.sum([CS[label][0]['SUMSQ'],np.square(cluster_df.loc[idx].to_numpy())],axis=0)
         RS_df = pd.DataFrame(data=RS,columns=columns).set_index('id')
 
         clusters = dict([])
@@ -137,9 +141,11 @@ def main(input_path, n_cluster, out_file1, out_file2):
         idx = point[0]
         return_dict[str(idx)] = -1
 
-    merged_points =  merge_DS_CS(DS,CS,dims=data_df.shape[1])
-    for k, val in merged_points.items():
-        return_dict[str(k)] = int(val)
+    merged_cs =  merge_DS_CS(DS,CS,dims=data_df.shape[1])
+    for cs_idx, label in merged_cs.items():
+        for point in CS[cs_idx][1]:
+            return_dict[str(point)] = int(label)
+        
 
     intermediate_df.to_csv(out_file2, index=False)
 
@@ -156,29 +162,27 @@ def calc_dist(p1, p2):
     return np.sqrt(dist).item()
 
 
-def calc_set_points(data_df : pd.DataFrame, SET, max_dist=3):
+def calc_set_points(data_df : pd.DataFrame, SET, max_dist=2):
     point_idxs = data_df.index.tolist()
-    dists = {idx: [] for idx in point_idxs}
-    for cluster in SET:
+    min_dists = {idx: float('inf') for idx in point_idxs}
+    alpha = max_dist * np.sqrt(data_df.shape[1])
+    min_labels = {idx: -1 for idx in point_idxs}
+    for cluster_label, cluster in enumerate(SET):
         sd = np.sqrt((cluster['SUMSQ'] / cluster['N']) - np.square(cluster['SUM'] / cluster['N']))
         centroid = cluster['SUM'] / cluster['N']
         for idx in point_idxs:
             dist = mahalanobis_dist(data_df.loc[idx],centroid,sd)
-            dists[idx].append(dist)
-    del_list = []
-    for k, dist_list in dists.items():
-        min_val = min(dist_list)
-        min_idx = np.argmin(dist_list)
-        if min_val > max_dist*math.sqrt(data_df.shape[1]):
-            del_list.append(k)
-        else:
-            dists[k] = min_idx
-    for k in del_list:
-        del dists[k]
-    return del_list, dists
+            if dist < min_dists[idx]:
+                min_dists[idx] = dist
+                if dist > alpha:
+                    min_labels[idx] = -1
+                else:
+                    min_labels[idx] = cluster_label
+
+    return min_labels
 
 
-def merge_CS(CS, dims, max_itter=500, max_dist = 3):
+def merge_CS(CS, dims, max_itter=500, max_dist = 2):
     points_dict = {(i,):cluster for i, cluster in enumerate(CS)}
     priority_queue = []
     for c1, c2 in  combinations(points_dict.keys(),2):
@@ -219,36 +223,30 @@ def merge_CS(CS, dims, max_itter=500, max_dist = 3):
     return list(points_dict.values())
 
 
-def merge_DS_CS(DS, CS, dims, max_dist = 3):
-    dists = dict([])
-    for ds_cluster in DS:
+def merge_DS_CS(DS, CS, dims, max_dist = 2):
+    min_dists = {idx:float('inf') for idx, _ in enumerate(CS)}
+    min_labels = {idx:-1 for idx, _ in enumerate(CS)}
+    alpha = max_dist * np.sqrt(dims)
+    for ds_label, ds_cluster in enumerate(DS):
         ds_centroid = ds_cluster['SUM'] / ds_cluster['N']
         ds_std = np.sqrt((ds_cluster['SUMSQ'] / ds_cluster['N']) - np.square(ds_cluster['SUM'] / ds_cluster['N']))
-        for cs_cluster, points in CS:
+        for cs_label, (cs_cluster, _) in enumerate(CS):
             cs_centroid = cs_cluster['SUM'] / cs_cluster['N']
             dist = mahalanobis_dist(cs_centroid, ds_centroid, ds_std)
-            for point in points:
-                if point not in dists:
-                    dists[point] = []
-                dists[point].append(dist)
-    for point, dist_list in dists.items():
-        min_val = min(dist_list)
-        min_idx = np.argmin(dist_list)
-        if min_val > max_dist*math.sqrt(dims):
-            dists[point] = -1
-        else:
-            dists[point] = min_idx
-    return dists
+            if dist < min_dists[cs_label]:
+                min_dists[cs_label] = dist
+                if dist > alpha:
+                    min_labels[cs_label] = -1
+                else:
+                    min_labels[cs_label] = ds_label
+    return min_dists
 
 
 def mahalanobis_dist(p1, p2, sd_list):
     dist = 0
     for d1, d2, sd in zip(p1, p2, sd_list):
         dist += ((d1 - d2) / (sd + 0.001))**2
-    dist = np.sqrt(dist).item()
-    if type(dist) != float or math.isnan(dist):
-        dist = 100.0
-    return dist
+    return np.sqrt(dist).item()
 
 
 if __name__ == '__main__':

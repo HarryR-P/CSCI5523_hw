@@ -7,13 +7,22 @@ import numpy as np
 import math
 import pandas as pd
 import heapq
+from sklearn.metrics import normalized_mutual_info_score
 from itertools import combinations
 
 def main():
-    DS = [{'N':5, 'SUM':np.array([2,2,2,2,2]), 'SUMSQ':np.array([10,10,10,10,10])},{'N':10, 'SUM':np.array([2,2,2,2,2]), 'SUMSQ':np.array([10,10,10,10,10])}]
-    CS = [({'N':5, 'SUM':np.array([2,2,2,2,2]), 'SUMSQ':np.array([10,10,10,10,10])}, [1,2,3,4,5])]
-    print([1,2,3] + [4,5,6])
+    with open('C:\\Users\\harri\\Documents\\CSCI_5523_local\\CSCI5523_hw\\Hw5\\clusters.json') as f:
+        pred_dict = json.load(f)
+        pred_labels = []
+        for i in range(len(pred_dict)):
+            pred_labels.append(pred_dict[str(i)])
+    with open('C:\\Users\\harri\\Documents\\CSCI_5523_local\\CSCI5523_hw\\data\\cluster2.json') as f:
+        true_dict = json.load(f)
+        true_labels = []
+        for i in range(len(true_dict)):
+            true_labels.append(true_dict[str(i)])
     
+    print(normalized_mutual_info_score(true_labels, pred_labels))
     
     return
 
