@@ -19,34 +19,35 @@ def main(input_path, n_cluster, out_file1, out_file2):
     columns_dict = {i: name for i, name in enumerate(columns)}
     data_df = data_df.rename(columns=columns_dict).set_index('id')
     intermediate_df = pd.DataFrame(columns=['round_id','nof_cluster_discard','nof_point_discard','nof_cluster_compression','nof_point_compression','nof_point_retained'])
-    points_df = data_df.sample(frac=0.5)
+    points_df = data_df.sample(frac=0.8)
     points_idx = points_df.index.tolist()
-    kmeans = KMeans(n_clusters=n_cluster, n_init='auto').fit(points_df.to_numpy())
+    kmeans = KMeans(n_clusters=3*n_cluster, n_init='auto').fit(points_df.to_numpy())
     return_dict = dict([])
     DS = []
     CS = []
     RS = []
     clusters = dict([])
     points_idx = points_df.index.tolist()
-    cur_label = 0
+
     point_discard = 0
     for idx, label in zip(points_idx,kmeans.labels_):
         if label not in clusters:
             clusters[label] = []
         clusters[label].append(idx)
-    for cluster in clusters.values():
-        if len(cluster) == 1:
-            RS.append([cluster[0]] + points_df.loc[cluster[0]].values.tolist())
-        elif len(cluster) > 1:
-            row = {'N':0,'SUM':[0 for _ in range(points_df.shape[1])],'SUMSQ':[0 for _ in range(points_df.shape[1])]}
-            for idx in cluster:
-                return_dict[str(idx)] = cur_label
-                point_discard += 1
-                row['N'] += 1
-                row['SUM'] = np.sum([row['SUM'],points_df.loc[idx].to_numpy()],axis=0)
-                row['SUMSQ'] = np.sum([row['SUMSQ'],np.square(points_df.loc[idx].to_numpy())],axis=0)
-            DS.append(row)
-            cur_label += 1
+    clusters = sorted(list(clusters.values()),key=lambda x: -len(x))
+    DS_points = []
+    for i, cluster in enumerate(clusters):
+        row = {'N':0,'SUM':[0 for _ in range(points_df.shape[1])],'SUMSQ':[0 for _ in range(points_df.shape[1])]}
+        for idx in cluster:
+            return_dict[str(idx)] = i
+            point_discard += 1
+            row['N'] += 1
+            row['SUM'] = np.sum([row['SUM'],points_df.loc[idx].to_numpy()],axis=0)
+            row['SUMSQ'] = np.sum([row['SUMSQ'],np.square(points_df.loc[idx].to_numpy())],axis=0)
+            DS_points.append(idx)
+        DS.append(row)
+        if i >= n_cluster-1:
+            break
     
 
     # unlabled_list ,ds_points = calc_set_points(data_df, DS)
@@ -56,8 +57,8 @@ def main(input_path, n_cluster, out_file1, out_file2):
     #     DS[label]['SUM'] = np.sum([DS[label]['SUM'],data_df.loc[idx].to_numpy()],axis=0)
     #     DS[label]['SUMSQ'] = np.sum([DS[label]['SUMSQ'],np.square(data_df.loc[idx].to_numpy())],axis=0)
 
-    cluster_df = data_df.drop(points_df.loc[points_idx].index)
-
+    cluster_df = data_df.drop(DS_points)
+    
     CS_kmeans = KMeans(n_clusters=5*n_cluster, n_init='auto').fit(cluster_df.to_numpy())
     clusters = dict([])
     for idx, label in zip(cluster_df.index.tolist(),CS_kmeans.labels_):
