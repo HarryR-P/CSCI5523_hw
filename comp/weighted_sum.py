@@ -20,7 +20,10 @@ def main(rec1_file, rec2_file, output_file):
 
     return_dict = dict([])
     for key in keys:
-        return_dict[key] = 0.4 * pred1_dict[key] + 0.6 * pred2_dict[key]
+        if pred2_dict[key] > 5.0:
+            return_dict[key] = pred2_dict[key]
+        else:
+            return_dict[key] = 0.4 * pred1_dict[key] + 0.6 * pred2_dict[key]
     
     with open(output_file, 'w') as outfile:
         for (id1, id2), val in return_dict.items():
