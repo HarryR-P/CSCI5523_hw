@@ -16,7 +16,7 @@ def main():
         pred_labels = []
         for i in range(len(pred_dict)):
             pred_labels.append(pred_dict[str(i)])
-    with open('C:\\Users\\harri\\Documents\\CSCI_5523_local\\CSCI5523_hw\\data\\cluster2.json') as f:
+    with open('C:\\Users\\harri\\Documents\\CSCI_5523_local\\CSCI5523_hw\\data\\cluster1.json') as f:
         true_dict = json.load(f)
         true_labels = []
         for i in range(len(true_dict)):
