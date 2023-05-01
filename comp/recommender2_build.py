@@ -102,18 +102,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='A1T1')
     parser.add_argument('--input_file', type=str, default='./data/train_review.json')
     parser.add_argument('--output_file', type=str, default='./outputs/task1.out')
-    parser.add_argument('--time_file', type=str, default='./outputs/task1.time')
     parser.add_argument('--threshold', type=float, default=0.1)
     parser.add_argument('--n_bands', type=int, default=50)
-    parser.add_argument('--n_rows', type=int, default=2)
+    parser.add_argument('--n_rows', type=int, default=4)
     args = parser.parse_args()
 
     main(args.input_file, args.output_file, args.threshold, args.n_bands, args.n_rows, sc)
     sc.stop()
 
     # log time
-    with open(args.time_file, 'w') as outfile:
-        json.dump({'time': time.time() - start_time}, outfile)
     print('The run time is: ', (time.time() - start_time))
 
 
