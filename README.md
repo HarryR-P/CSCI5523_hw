@@ -1,1 +1,2 @@
-# CSCI5523_hw
+# My homework for CS Datamining Class
+Project in comp file
