@@ -9,13 +9,13 @@ from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
 
 def main():
     pred_dict = dict([])
-    with open('C:\\Users\\harri\\Documents\\CSCI_5523_local\\CSCI5523_hw\\comp\\test\\out.json') as f:
+    with open('.\\comp\\test\\out.json') as f:
         for line in f:
             input_json = json.loads(line)
             pred_dict[(input_json['user_id'], input_json['business_id'])] = float(input_json['stars'])
     
     true_dict = dict([])
-    with open('C:\\Users\\harri\\Documents\\CSCI_5523_local\\CSCI5523_hw\\data\\val_review_ratings.json') as f:
+    with open('.\\data\\val_review_ratings.json') as f:
         for line in f:
             input_json = json.loads(line)
             true_dict[(input_json['user_id'], input_json['business_id'])] = float(input_json['stars'])
